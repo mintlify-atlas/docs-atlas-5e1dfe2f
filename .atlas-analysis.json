@@ -1,0 +1,269 @@
+{
+  "projectType": "data-platform",
+  "projectName": "Apache Arrow",
+  "projectDescription": "A universal columnar format and multi-language toolbox for fast data interchange and in-memory analytics",
+  "theme": "sequoia",
+  "primaryColor": "#D95F02",
+  "lightColor": "#FDB863",
+  "darkColor": "#B34700",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Overview",
+        "groups": [
+          {
+            "group": "Introduction",
+            "pages": [
+              "introduction",
+              "why-arrow",
+              "key-concepts"
+            ]
+          },
+          {
+            "group": "Format Specification",
+            "pages": [
+              "format/columnar-format",
+              "format/ipc-format",
+              "format/flight-protocol",
+              "format/data-types"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/memory-model",
+              "architecture/type-system",
+              "architecture/compute-engine"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Getting Started",
+        "groups": [
+          {
+            "group": "Installation",
+            "pages": [
+              "getting-started/installation",
+              "getting-started/install-cpp",
+              "getting-started/install-python",
+              "getting-started/install-r",
+              "getting-started/install-ruby"
+            ]
+          },
+          {
+            "group": "Quickstart Guides",
+            "pages": [
+              "getting-started/quickstart-cpp",
+              "getting-started/quickstart-python",
+              "getting-started/quickstart-r",
+              "getting-started/quickstart-ruby"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Language Libraries",
+        "groups": [
+          {
+            "group": "C++",
+            "pages": [
+              "cpp/overview",
+              "cpp/building",
+              "cpp/arrays-tables",
+              "cpp/io-memory",
+              "cpp/compute",
+              "cpp/acero"
+            ]
+          },
+          {
+            "group": "Python",
+            "pages": [
+              "python/overview",
+              "python/installation",
+              "python/tables-arrays",
+              "python/compute",
+              "python/dataset",
+              "python/parquet"
+            ]
+          },
+          {
+            "group": "R",
+            "pages": [
+              "r/overview",
+              "r/installation",
+              "r/data-wrangling",
+              "r/reading-writing",
+              "r/dataset"
+            ]
+          },
+          {
+            "group": "Ruby",
+            "pages": [
+              "ruby/overview",
+              "ruby/installation",
+              "ruby/basic-usage"
+            ]
+          },
+          {
+            "group": "Other Languages",
+            "pages": [
+              "languages/c-glib",
+              "languages/external-libraries"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Working with Data",
+            "pages": [
+              "guides/reading-writing",
+              "guides/memory-management",
+              "guides/data-types",
+              "guides/schemas"
+            ]
+          },
+          {
+            "group": "File Formats",
+            "pages": [
+              "guides/parquet",
+              "guides/csv",
+              "guides/json",
+              "guides/orc",
+              "guides/feather"
+            ]
+          },
+          {
+            "group": "Data Processing",
+            "pages": [
+              "guides/compute-functions",
+              "guides/acero-query-engine",
+              "guides/datasets",
+              "guides/expressions"
+            ]
+          },
+          {
+            "group": "Data Transfer",
+            "pages": [
+              "guides/flight-rpc",
+              "guides/flight-sql",
+              "guides/ipc-streaming",
+              "guides/c-data-interface"
+            ]
+          },
+          {
+            "group": "Advanced Topics",
+            "pages": [
+              "guides/gandiva",
+              "guides/cuda-gpu",
+              "guides/extension-types",
+              "guides/substrait"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "C++ API",
+            "pages": [
+              "api/cpp/array",
+              "api/cpp/table",
+              "api/cpp/datatype",
+              "api/cpp/compute",
+              "api/cpp/io",
+              "api/cpp/filesystem"
+            ]
+          },
+          {
+            "group": "Python API",
+            "pages": [
+              "api/python/array",
+              "api/python/table",
+              "api/python/schema",
+              "api/python/compute",
+              "api/python/dataset",
+              "api/python/filesystem"
+            ]
+          },
+          {
+            "group": "R API",
+            "pages": [
+              "api/r/array",
+              "api/r/table",
+              "api/r/dataset"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Developer Guide",
+        "groups": [
+          {
+            "group": "Contributing",
+            "pages": [
+              "developers/contributing",
+              "developers/code-of-conduct",
+              "developers/code-review"
+            ]
+          },
+          {
+            "group": "Building from Source",
+            "pages": [
+              "developers/building-cpp",
+              "developers/building-python",
+              "developers/building-r",
+              "developers/ci-system"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "developers/testing",
+              "developers/benchmarking",
+              "developers/debugging",
+              "developers/release-process"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Universal columnar memory format for efficient analytics",
+    "Zero-copy data sharing between processes and systems",
+    "Multi-language implementations (C++, Python, R, Ruby, and more)",
+    "High-performance compute functions and query engine (Acero)",
+    "File format support (Parquet, CSV, JSON, ORC, Feather)",
+    "Arrow Flight RPC for high-performance data transfer",
+    "Integration with popular data tools and frameworks",
+    "GPU support via CUDA integration",
+    "Expression compiler (Gandiva) using LLVM"
+  ],
+  "publicApiSurface": [
+    "arrow::Array - Columnar array data structure",
+    "arrow::Table - Two-dimensional table with named columns",
+    "arrow::Schema - Container for field metadata",
+    "arrow::RecordBatch - Collection of arrays with same length",
+    "arrow::Buffer - Contiguous memory buffer",
+    "arrow::DataType - Type descriptors for Arrow data",
+    "arrow::compute - Compute functions for data processing",
+    "arrow::acero - Query execution engine",
+    "arrow::dataset - Multi-file dataset reading/scanning",
+    "arrow::fs - Filesystem abstraction layer",
+    "arrow::io - Input/output interfaces",
+    "arrow::ipc - Inter-process communication",
+    "arrow::flight - Flight RPC client/server",
+    "parquet::arrow - Parquet file format integration",
+    "pyarrow.Array - Python array class",
+    "pyarrow.Table - Python table class",
+    "pyarrow.parquet - Python Parquet interface",
+    "pyarrow.dataset - Python dataset API",
+    "pyarrow.compute - Python compute functions",
+    "pyarrow.flight - Python Flight RPC"
+  ]
+}
