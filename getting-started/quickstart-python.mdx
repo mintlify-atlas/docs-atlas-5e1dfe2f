@@ -1,0 +1,489 @@
+---
+title: "Python Quickstart"
+description: "Get started with PyArrow in minutes - from installation to working with arrays, tables, and files"
+---
+
+This guide will get you up and running with PyArrow quickly. You'll learn how to create arrays, build tables, perform computations, and work with data files.
+
+## Prerequisites
+
+You'll need:
+- Python 3.10 or higher
+- pip or conda package manager
+- Basic familiarity with Python and pandas (optional)
+
+<Steps>
+
+<Step title="Install PyArrow">
+
+<Tabs>
+  <Tab title="pip">
+    ```bash
+    pip install pyarrow
+    ```
+  </Tab>
+  <Tab title="conda">
+    ```bash
+    conda install -c conda-forge pyarrow
+    ```
+  </Tab>
+  <Tab title="With pandas">
+    ```bash
+    pip install pyarrow pandas
+    ```
+  </Tab>
+</Tabs>
+
+Verify the installation:
+
+```python
+import pyarrow as pa
+print(pa.__version__)
+```
+
+</Step>
+
+<Step title="Create Your First Arrays">
+
+Arrays are the fundamental data structure in Arrow - homogeneous, typed collections of data.
+
+```python
+import pyarrow as pa
+
+# Create arrays from Python lists
+days = pa.array([1, 12, 17, 23, 28], type=pa.int8())
+print(days)
+# Output: [1, 12, 17, 23, 28]
+
+# Create arrays with different types
+names = pa.array(["Alice", "Bob", "Carol"])
+scores = pa.array([95.5, 87.3, 92.1], type=pa.float64())
+
+# Arrays with null values
+optional_data = pa.array([1, None, 3, None, 5])
+print(optional_data)
+# Output: [1, null, 3, null, 5]
+```
+
+**Key points:**
+- Arrays are **immutable** after creation
+- Each array has a single data **type**
+- Null values are supported natively
+- Arrow uses efficient columnar memory layout
+
+</Step>
+
+<Step title="Build Tables from Arrays">
+
+Tables organize multiple arrays into named columns - similar to pandas DataFrames but more efficient.
+
+```python
+import pyarrow as pa
+
+# Create arrays for each column
+days = pa.array([1, 12, 17, 23, 28], type=pa.int8())
+months = pa.array([1, 3, 5, 7, 1], type=pa.int8())
+years = pa.array([1990, 2000, 1995, 2000, 1995], type=pa.int16())
+
+# Build table with named columns
+birthdays_table = pa.table(
+    [days, months, years],
+    names=["days", "months", "years"]
+)
+
+print(birthdays_table)
+```
+
+**Output:**
+```
+pyarrow.Table
+days: int8
+months: int8
+years: int16
+----
+days: [[1,12,17,23,28]]
+months: [[1,3,5,7,1]]
+years: [[1990,2000,1995,2000,1995]]
+```
+
+**Access table data:**
+
+```python
+# Get column by name
+print(birthdays_table["years"])
+
+# Get column by index
+print(birthdays_table[0])
+
+# Table metadata
+print(f"Rows: {birthdays_table.num_rows}")
+print(f"Columns: {birthdays_table.num_columns}")
+print(f"Schema: {birthdays_table.schema}")
+```
+
+</Step>
+
+<Step title="Write and Read Parquet Files">
+
+Parquet is the most common format for Arrow data - it's columnar, compressed, and very fast.
+
+```python
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+# Create a table
+days = pa.array([1, 12, 17, 23, 28], type=pa.int8())
+months = pa.array([1, 3, 5, 7, 1], type=pa.int8())
+years = pa.array([1990, 2000, 1995, 2000, 1995], type=pa.int16())
+
+birthdays_table = pa.table(
+    [days, months, years],
+    names=["days", "months", "years"]
+)
+
+# Write to Parquet file
+pq.write_table(birthdays_table, 'birthdays.parquet')
+print("Wrote birthdays.parquet")
+
+# Read from Parquet file
+reloaded_table = pq.read_table('birthdays.parquet')
+print("\nRead table:")
+print(reloaded_table)
+
+# Read specific columns only
+days_only = pq.read_table('birthdays.parquet', columns=['days'])
+print("\nRead only 'days' column:")
+print(days_only)
+```
+
+**Why Parquet?**
+- Columnar format = faster queries
+- Built-in compression = smaller files
+- Preserves Arrow types perfectly
+- Industry standard for analytics
+
+</Step>
+
+<Step title="Perform Computations">
+
+Arrow provides a rich set of compute functions for data processing.
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+# Create sample data
+ages = pa.array([25, 30, 35, 40, 45, 30, 35])
+cities = pa.array(["NYC", "SF", "LA", "NYC", "SF", "NYC", "LA"])
+
+# Statistical functions
+print(f"Mean age: {pc.mean(ages)}")
+print(f"Min age: {pc.min(ages).as_py()}")
+print(f"Max age: {pc.max(ages).as_py()}")
+print(f"Sum: {pc.sum(ages).as_py()}")
+
+# Value counts
+counts = pc.value_counts(cities)
+print(f"\nCity counts: {counts}")
+
+# Filtering
+young = pc.less(ages, 35)
+print(f"\nAges < 35: {pc.filter(ages, young)}")
+
+# Arithmetic
+ages_in_months = pc.multiply(ages, 12)
+print(f"\nAges in months: {ages_in_months}")
+```
+
+**Common compute functions:**
+- Math: `add`, `subtract`, `multiply`, `divide`
+- Stats: `mean`, `stddev`, `variance`, `min`, `max`
+- Strings: `utf8_upper`, `utf8_lower`, `split_pattern`
+- Comparisons: `equal`, `less`, `greater`
+- Aggregations: `sum`, `count`, `value_counts`
+
+</Step>
+
+<Step title="Work with Large Datasets">
+
+For data that doesn't fit in memory, use the Dataset API with partitioning.
+
+```python
+import pyarrow as pa
+import pyarrow.dataset as ds
+import pyarrow.compute as pc
+
+# Create sample data
+data = pa.table({
+    "year": [2020, 2020, 2021, 2021, 2022, 2022],
+    "month": [1, 2, 1, 2, 1, 2],
+    "revenue": [100, 150, 120, 180, 140, 200]
+})
+
+# Write partitioned dataset
+ds.write_dataset(
+    data,
+    "revenue_data",
+    format="parquet",
+    partitioning=ds.partitioning(
+        pa.schema([("year", pa.int64())])
+    )
+)
+
+print("Wrote partitioned dataset to revenue_data/")
+
+# Open dataset (lazy - doesn't load all data)
+dataset = ds.dataset("revenue_data", format="parquet")
+
+print(f"\nDataset files: {dataset.files}")
+
+# Query with filtering (only reads relevant partitions)
+result = dataset.to_table(
+    filter=pc.field("year") == 2021
+)
+
+print("\nFiltered data (year=2021):")
+print(result)
+
+# Scan and aggregate
+for batch in dataset.to_batches():
+    print(f"Batch: {batch.num_rows} rows")
+```
+
+**Dataset benefits:**
+- Works with data larger than memory
+- Partition pruning for fast queries
+- Reads only needed columns and partitions
+- Supports multiple file formats
+
+</Step>
+
+<Step title="Convert to/from Pandas">
+
+PyArrow integrates seamlessly with pandas for easy data exchange.
+
+```python
+import pyarrow as pa
+import pandas as pd
+
+# Create pandas DataFrame
+df = pd.DataFrame({
+    'name': ['Alice', 'Bob', 'Carol'],
+    'age': [30, 25, 35],
+    'city': ['NYC', 'SF', 'LA']
+})
+
+print("Pandas DataFrame:")
+print(df)
+
+# Convert to Arrow Table (zero-copy when possible)
+table = pa.Table.from_pandas(df)
+print("\nArrow Table:")
+print(table)
+
+# Convert back to pandas
+df_back = table.to_pandas()
+print("\nBack to pandas:")
+print(df_back)
+
+# Use pandas string dtype for efficiency
+df_strings = table.to_pandas(strings_to_categorical=True)
+print("\nWith categorical strings:")
+print(df_strings.dtypes)
+```
+
+**Why use Arrow with pandas?**
+- Faster I/O (especially Parquet)
+- Better memory efficiency
+- Preserve all data types correctly
+- Enable zero-copy operations
+
+</Step>
+
+</Steps>
+
+## Complete Example
+
+Here's a complete workflow that demonstrates common Arrow operations:
+
+```python
+import pyarrow as pa
+import pyarrow.parquet as pq
+import pyarrow.compute as pc
+
+# 1. Create data
+data = pa.table({
+    'product': ['A', 'B', 'A', 'C', 'B', 'A'],
+    'quantity': [10, 20, 15, 5, 25, 12],
+    'price': [100.0, 200.0, 100.0, 150.0, 200.0, 100.0]
+})
+
+print("Original data:")
+print(data)
+
+# 2. Compute total value
+revenue = pc.multiply(data['quantity'], data['price'])
+data = data.append_column('revenue', revenue)
+
+print("\nWith revenue column:")
+print(data)
+
+# 3. Filter for high-value items
+high_value = pc.greater(data['revenue'], 1500)
+filtered = pc.filter(data, high_value)
+
+print("\nHigh-value items (revenue > 1500):")
+print(filtered)
+
+# 4. Save to Parquet
+pq.write_table(data, 'sales.parquet')
+print("\nSaved to sales.parquet")
+
+# 5. Read and analyze
+loaded = pq.read_table('sales.parquet')
+total_revenue = pc.sum(loaded['revenue']).as_py()
+print(f"\nTotal revenue: ${total_revenue:,.2f}")
+
+# 6. Group by product (using unique + filter)
+unique_products = pc.unique(loaded['product']).to_pylist()
+for product in unique_products:
+    mask = pc.equal(loaded['product'], product)
+    product_data = pc.filter(loaded, mask)
+    product_revenue = pc.sum(product_data['revenue']).as_py()
+    print(f"{product}: ${product_revenue:,.2f}")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Compute Functions" icon="calculator" href="/python/compute">
+    Explore all available compute functions
+  </Card>
+  <Card title="CSV Files" icon="file-csv" href="/python/csv">
+    Fast CSV reading and writing
+  </Card>
+  <Card title="Working with Pandas" icon="table" href="/python/pandas">
+    Deep integration with pandas
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/python">
+    Complete PyArrow API documentation
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+### Reading Large CSV Files
+
+```python
+import pyarrow.csv as csv
+
+# Read with streaming for large files
+table = csv.read_csv('large_file.csv')
+
+# Or use dataset API for multiple files
+import pyarrow.dataset as ds
+dataset = ds.dataset('data/', format='csv')
+```
+
+### Working with Schemas
+
+```python
+# Define explicit schema
+schema = pa.schema([
+    ('name', pa.string()),
+    ('age', pa.int64()),
+    ('balance', pa.float64())
+])
+
+# Create table with schema
+table = pa.table(data, schema=schema)
+```
+
+### Handling Nested Data
+
+```python
+# Create nested array
+nested = pa.array([
+    [1, 2, 3],
+    [4, 5],
+    [6, 7, 8, 9]
+])
+
+# Create struct array
+structs = pa.array([
+    {'name': 'Alice', 'age': 30},
+    {'name': 'Bob', 'age': 25}
+])
+```
+
+## Performance Tips
+
+<AccordionGroup>
+  <Accordion title="Use columnar operations">
+    Arrow is optimized for columnar operations. Process entire columns at once instead of row-by-row:
+    ```python
+    # Good: columnar
+    result = pc.multiply(table['quantity'], table['price'])
+    
+    # Avoid: row-by-row
+    result = [row['quantity'] * row['price'] for row in table.to_pylist()]
+    ```
+  </Accordion>
+  
+  <Accordion title="Read only needed columns">
+    When reading Parquet, specify only the columns you need:
+    ```python
+    table = pq.read_table('data.parquet', columns=['name', 'age'])
+    ```
+  </Accordion>
+  
+  <Accordion title="Use dataset API for large data">
+    For data larger than memory, use datasets with filtering:
+    ```python
+    dataset = ds.dataset('large_data/', format='parquet')
+    result = dataset.to_table(filter=pc.field('year') == 2023)
+    ```
+  </Accordion>
+  
+  <Accordion title="Batch processing">
+    Process data in batches to control memory usage:
+    ```python
+    for batch in dataset.to_batches(batch_size=10000):
+        # Process batch
+        pass
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="ImportError: No module named 'pyarrow'">
+    Make sure PyArrow is installed in your current Python environment:
+    ```bash
+    pip install pyarrow
+    # or
+    conda install -c conda-forge pyarrow
+    ```
+  </Accordion>
+  
+  <Accordion title="Schema mismatch errors">
+    When appending or combining tables, ensure schemas match:
+    ```python
+    print(table1.schema)
+    print(table2.schema)
+    # Cast if needed
+    table2 = table2.cast(table1.schema)
+    ```
+  </Accordion>
+  
+  <Accordion title="Memory issues with large files">
+    Use the dataset API instead of loading entire files:
+    ```python
+    # Instead of pq.read_table()
+    dataset = ds.dataset('file.parquet', format='parquet')
+    for batch in dataset.to_batches():
+        process(batch)
+    ```
+  </Accordion>
+</AccordionGroup>

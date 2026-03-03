@@ -1,0 +1,542 @@
+---
+title: Working with JSON Files
+description: Learn how to read and write JSON files using Apache Arrow in C++ and Python, with support for line-delimited JSON and streaming.
+---
+
+Apache Arrow supports reading line-delimited JSON (also known as JSONL or newline-delimited JSON), where each line contains a separate JSON object. This format is commonly used for log files and data streaming.
+
+## Reading JSON Files
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/json/api.h>
+    #include <arrow/io/api.h>
+
+    // Read entire JSON file as a Table
+    arrow::Result<std::shared_ptr<arrow::Table>> ReadJSONFile(
+        const std::string& filename) {
+      // Open the file
+      ARROW_ASSIGN_OR_RAISE(
+          auto input,
+          arrow::io::ReadableFile::Open(filename));
+
+      // Configure JSON reader
+      auto read_options = arrow::json::ReadOptions::Defaults();
+      auto parse_options = arrow::json::ParseOptions::Defaults();
+
+      // Create a JSON TableReader
+      ARROW_ASSIGN_OR_RAISE(
+          auto reader,
+          arrow::json::TableReader::Make(
+              arrow::default_memory_pool(),
+              input,
+              read_options,
+              parse_options));
+
+      // Read the entire JSON file as a table
+      return reader->Read();
+    }
+
+    // Read JSON with explicit schema
+    arrow::Result<std::shared_ptr<arrow::Table>> ReadJSONWithSchema(
+        const std::string& filename,
+        const std::shared_ptr<arrow::Schema>& schema) {
+      ARROW_ASSIGN_OR_RAISE(
+          auto input,
+          arrow::io::ReadableFile::Open(filename));
+
+      auto read_options = arrow::json::ReadOptions::Defaults();
+      auto parse_options = arrow::json::ParseOptions::Defaults();
+      parse_options.explicit_schema = schema;
+
+      ARROW_ASSIGN_OR_RAISE(
+          auto reader,
+          arrow::json::TableReader::Make(
+              arrow::default_memory_pool(),
+              input,
+              read_options,
+              parse_options));
+
+      return reader->Read();
+    }
+
+    // Streaming JSON read
+    arrow::Status StreamJSONFile(const std::string& filename) {
+      ARROW_ASSIGN_OR_RAISE(
+          auto input,
+          arrow::io::ReadableFile::Open(filename));
+
+      auto read_options = arrow::json::ReadOptions::Defaults();
+      auto parse_options = arrow::json::ParseOptions::Defaults();
+
+      // Create a streaming reader
+      ARROW_ASSIGN_OR_RAISE(
+          auto reader,
+          arrow::json::StreamingReader::Make(
+              input,
+              read_options,
+              parse_options));
+
+      // Read batches
+      std::shared_ptr<arrow::RecordBatch> batch;
+      while (reader->ReadNext(&batch).ok() && batch != nullptr) {
+        std::cout << "Read batch with " << batch->num_rows() << " rows" << std::endl;
+      }
+
+      return arrow::Status::OK();
+    }
+
+    // Parse single JSON object from string
+    arrow::Result<std::shared_ptr<arrow::RecordBatch>> ParseJSONString(
+        const std::string& json_string) {
+      auto parse_options = arrow::json::ParseOptions::Defaults();
+      
+      auto buffer = arrow::Buffer::FromString(json_string);
+      return arrow::json::ParseOne(parse_options, buffer);
+    }
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import pyarrow.json as json
+
+    # Read entire JSON file as a Table
+    table = json.read_json('data.json')
+    print(f"Loaded table with {table.num_rows} rows")
+
+    # Read with explicit schema
+    schema = pa.schema([
+        ('id', pa.int64()),
+        ('name', pa.string()),
+        ('value', pa.float64())
+    ])
+    parse_options = json.ParseOptions(explicit_schema=schema)
+    table = json.read_json('data.json', parse_options=parse_options)
+
+    # Streaming read for large files
+    reader = json.open_json('large_data.json')
+    for batch in reader:
+        print(f"Processing batch with {batch.num_rows} rows")
+
+    # Read with multi-line JSON support
+    parse_options = json.ParseOptions(
+        newlines_in_values=True  # Allow newlines in JSON values
+    )
+    table = json.read_json('pretty_data.json', parse_options=parse_options)
+
+    # Read JSON from string
+    json_string = '{"a": 1, "b": "foo"}\n{"a": 2, "b": "bar"}'
+    import io
+    table = json.read_json(io.BytesIO(json_string.encode()))
+
+    # Control type inference behavior
+    parse_options = json.ParseOptions(
+        explicit_schema=schema,
+        unexpected_field_behavior='ignore'  # Ignore unexpected fields
+    )
+    table = json.read_json('data.json', parse_options=parse_options)
+    ```
+  </Tab>
+</Tabs>
+
+## JSON Format Requirements
+
+<Note>
+**Line-Delimited JSON**: Arrow's JSON reader expects newline-delimited JSON (JSONL format), where each line is a complete JSON object:
+
+```json
+{"id": 1, "name": "Alice", "value": 10.5}
+{"id": 2, "name": "Bob", "value": 20.3}
+{"id": 3, "name": "Charlie", "value": 30.1}
+```
+
+This is different from a single JSON array:
+```json
+[
+  {"id": 1, "name": "Alice"},
+  {"id": 2, "name": "Bob"}
+]
+```
+</Note>
+
+## Parse Options
+
+### Explicit Schema
+
+Provide an explicit schema to control type inference:
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    auto parse_options = arrow::json::ParseOptions::Defaults();
+    
+    // Define the expected schema
+    auto schema = arrow::schema({
+        arrow::field("id", arrow::int64()),
+        arrow::field("name", arrow::utf8()),
+        arrow::field("timestamp", arrow::timestamp(arrow::TimeUnit::SECOND)),
+        arrow::field("value", arrow::float64())
+    });
+    
+    parse_options.explicit_schema = schema;
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    schema = pa.schema([
+        ('id', pa.int64()),
+        ('name', pa.string()),
+        ('timestamp', pa.timestamp('s')),
+        ('value', pa.float64())
+    ])
+    
+    parse_options = json.ParseOptions(explicit_schema=schema)
+    table = json.read_json('data.json', parse_options=parse_options)
+    ```
+  </Tab>
+</Tabs>
+
+### Handling Unexpected Fields
+
+Control what happens when the JSON contains fields not in the schema:
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    auto parse_options = arrow::json::ParseOptions::Defaults();
+    
+    // Ignore unexpected fields
+    parse_options.unexpected_field_behavior = 
+        arrow::json::UnexpectedFieldBehavior::Ignore;
+    
+    // Error on unexpected fields
+    parse_options.unexpected_field_behavior = 
+        arrow::json::UnexpectedFieldBehavior::Error;
+    
+    // Infer types for unexpected fields (default)
+    parse_options.unexpected_field_behavior = 
+        arrow::json::UnexpectedFieldBehavior::InferType;
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    # Ignore unexpected fields
+    parse_options = json.ParseOptions(
+        explicit_schema=schema,
+        unexpected_field_behavior='ignore'
+    )
+    
+    # Error on unexpected fields
+    parse_options = json.ParseOptions(
+        explicit_schema=schema,
+        unexpected_field_behavior='error'
+    )
+    
+    # Infer types for unexpected fields (default)
+    parse_options = json.ParseOptions(
+        unexpected_field_behavior='infer_type'
+    )
+    
+    table = json.read_json('data.json', parse_options=parse_options)
+    ```
+  </Tab>
+</Tabs>
+
+### Multi-line JSON Objects
+
+For pretty-printed JSON with newlines inside objects:
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    auto parse_options = arrow::json::ParseOptions::Defaults();
+    
+    // Allow newlines within JSON values
+    parse_options.newlines_in_values = true;
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    parse_options = json.ParseOptions(
+        newlines_in_values=True  # Slower but handles pretty-printed JSON
+    )
+    
+    table = json.read_json('pretty_data.json', parse_options=parse_options)
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+**Performance Impact**: Enabling `newlines_in_values=True` can significantly slow down parsing. Only use it when necessary for pretty-printed JSON files.
+</Note>
+
+## Read Options
+
+### Multi-threading and Block Size
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    auto read_options = arrow::json::ReadOptions::Defaults();
+    
+    // Enable multi-threaded parsing
+    read_options.use_threads = true;
+    
+    // Set block size (affects parallelism and batch size)
+    read_options.block_size = 1 << 20;  // 1 MB
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    read_options = json.ReadOptions(
+        use_threads=True,
+        block_size=1024 * 1024  # 1 MB blocks
+    )
+    
+    table = json.read_json('data.json', read_options=read_options)
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+**Block Size**: Determines how much data is read at once and affects the size of record batches in streaming mode. Larger blocks improve throughput but increase memory usage.
+</Tip>
+
+## Type Inference
+
+### Automatic Type Inference
+
+By default, Arrow infers types from the JSON data:
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # Arrow automatically infers types from JSON
+    json_data = '''
+    {"id": 1, "name": "Alice", "value": 10.5, "active": true}
+    {"id": 2, "name": "Bob", "value": 20.3, "active": false}
+    '''
+    
+    import io
+    table = json.read_json(io.BytesIO(json_data.encode()))
+    print(table.schema)
+    # Output: id: int64, name: string, value: double, active: bool
+    ```
+  </Tab>
+</Tabs>
+
+### Schema Inference Behavior
+
+<Note>
+**Type Inference**: Arrow infers types from the first block of data. For files with inconsistent types:
+- Provide an explicit schema
+- Increase `block_size` to sample more data
+- Use `unexpected_field_behavior='infer_type'` to infer new fields dynamically
+</Note>
+
+## Streaming for Large Files
+
+For files that don't fit in memory, use streaming readers:
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    ARROW_ASSIGN_OR_RAISE(
+        auto input,
+        arrow::io::ReadableFile::Open("large_file.json"));
+
+    auto read_options = arrow::json::ReadOptions::Defaults();
+    auto parse_options = arrow::json::ParseOptions::Defaults();
+
+    ARROW_ASSIGN_OR_RAISE(
+        auto reader,
+        arrow::json::StreamingReader::Make(
+            input, read_options, parse_options));
+
+    // Process batches one at a time
+    std::shared_ptr<arrow::RecordBatch> batch;
+    while (reader->ReadNext(&batch).ok() && batch != nullptr) {
+      // Process batch without loading entire file
+      ProcessBatch(batch);
+    }
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    # Streaming read - memory efficient
+    reader = json.open_json('large_file.json')
+    
+    total_rows = 0
+    for batch in reader:
+        # Process each batch
+        total_rows += batch.num_rows
+        process_batch(batch)
+    
+    print(f"Processed {total_rows} rows total")
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+**Memory Efficiency**: Streaming readers process data in batches without loading the entire file into memory, making them ideal for large JSON files.
+</Tip>
+
+## Nested JSON Structures
+
+Arrow supports nested JSON structures with lists and structs:
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # JSON with nested structures
+    json_data = '''
+    {"id": 1, "user": {"name": "Alice", "age": 30}, "tags": ["python", "data"]}
+    {"id": 2, "user": {"name": "Bob", "age": 25}, "tags": ["java", "backend"]}
+    '''
+    
+    import io
+    table = json.read_json(io.BytesIO(json_data.encode()))
+    print(table.schema)
+    # Output:
+    # id: int64
+    # user: struct<name: string, age: int64>
+    # tags: list<item: string>
+    
+    # Access nested fields
+    print(table['user'])
+    print(table['tags'])
+    ```
+  </Tab>
+</Tabs>
+
+## Performance Tips
+
+<Tip>
+**Multi-threaded Parsing**: Enable `use_threads=True` for faster parsing on multi-core systems:
+
+```python
+read_options = json.ReadOptions(use_threads=True)
+table = json.read_json('large_file.json', read_options=read_options)
+```
+</Tip>
+
+<Tip>
+**Explicit Schema**: Provide an explicit schema to skip type inference and improve performance:
+
+```python
+parse_options = json.ParseOptions(explicit_schema=schema)
+table = json.read_json('data.json', parse_options=parse_options)
+```
+</Tip>
+
+<Tip>
+**Block Size Tuning**: Adjust block size based on your data:
+- Small files: Use default 1 MB
+- Large files: Increase to 4-8 MB for better throughput
+- Memory-constrained: Decrease to 256-512 KB
+
+```python
+read_options = json.ReadOptions(block_size=4 * 1024 * 1024)  # 4 MB
+table = json.read_json('data.json', read_options=read_options)
+```
+</Tip>
+
+<Note>
+**Avoid `newlines_in_values` When Possible**: Only enable this option for pretty-printed JSON, as it significantly impacts parsing performance.
+</Note>
+
+## Common Use Cases
+
+### Reading Log Files
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # Read JSON log files (JSONL format)
+    table = json.read_json('application.log')
+    
+    # Filter logs by level
+    import pyarrow.compute as pc
+    errors = table.filter(pc.field('level') == 'ERROR')
+    print(f"Found {errors.num_rows} error records")
+    ```
+  </Tab>
+</Tabs>
+
+### Converting JSON to Parquet
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow.json as json
+    import pyarrow.parquet as pq
+    
+    # Read JSON
+    table = json.read_json('data.json')
+    
+    # Write to Parquet for better performance
+    pq.write_table(table, 'data.parquet', compression='snappy')
+    ```
+  </Tab>
+</Tabs>
+
+### Handling Schema Evolution
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # Start with a base schema
+    base_schema = pa.schema([
+        ('id', pa.int64()),
+        ('name', pa.string())
+    ])
+    
+    # Allow new fields to be inferred
+    parse_options = json.ParseOptions(
+        explicit_schema=base_schema,
+        unexpected_field_behavior='infer_type'  # Infer new fields
+    )
+    
+    table = json.read_json('evolving_data.json', parse_options=parse_options)
+    ```
+  </Tab>
+</Tabs>
+
+## Limitations
+
+<Note>
+**JSON Format**: Arrow only supports line-delimited JSON (JSONL). To read standard JSON arrays, you'll need to pre-process the file or use other tools to convert it to JSONL format.
+
+Example conversion:
+```python
+import json
+
+# Read JSON array
+with open('array.json') as f:
+    data = json.load(f)
+
+# Write as JSONL
+with open('output.jsonl', 'w') as f:
+    for item in data:
+        f.write(json.dumps(item) + '\n')
+```
+</Note>
+
+<Note>
+**No JSON Writing**: Arrow currently only provides JSON reading capabilities. To write JSON, use standard Python libraries or convert to other formats like Parquet or CSV.
+
+```python
+import json
+
+# Convert Arrow table to JSON
+table = json.read_json('data.jsonl')
+data = table.to_pydict()
+
+# Write using Python's json module
+with open('output.json', 'w') as f:
+    json.dump(data, f)
+```
+</Note>

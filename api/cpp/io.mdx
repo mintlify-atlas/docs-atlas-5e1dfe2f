@@ -1,0 +1,328 @@
+---
+title: I/O Interfaces
+description: API reference for Apache Arrow C++ I/O interfaces
+---
+
+# I/O Interfaces
+
+Arrow's I/O interfaces provide abstract interfaces for reading and writing data from various sources.
+
+## Core Interfaces
+
+### FileInterface
+
+Base interface for all file-like objects.
+
+```cpp
+class FileInterface
+```
+
+<ResponseField name="Close" type="Status">
+  Closes the stream cleanly. For writable streams, attempts to flush pending data before releasing resources. After Close(), closed() returns true
+</ResponseField>
+
+<ResponseField name="CloseAsync" type="Future<>">
+  Closes the stream asynchronously. By default, submits synchronous Close() to the I/O thread pool
+</ResponseField>
+
+<ResponseField name="Abort" type="Status">
+  Closes the stream abruptly without guaranteeing pending data is flushed. Merely releases underlying resources
+</ResponseField>
+
+<ResponseField name="Tell" type="Result<int64_t>">
+  Returns the current position in the stream
+</ResponseField>
+
+<ResponseField name="closed" type="bool">
+  Returns whether the stream is closed
+</ResponseField>
+
+<ResponseField name="mode" type="FileMode::type">
+  Returns the file mode (READ, WRITE, or READWRITE)
+</ResponseField>
+
+---
+
+## Input Streams
+
+### InputStream
+
+Interface for sequential reading.
+
+```cpp
+class InputStream : virtual public FileInterface, virtual public Readable
+```
+
+<ResponseField name="Read" type="Result<int64_t>">
+  <ParamField path="nbytes" type="int64_t" required>
+    Maximum number of bytes to read
+  </ParamField>
+  <ParamField path="out" type="void*" required>
+    Buffer to read into
+  </ParamField>
+  
+  Reads at most nbytes from the current position into out. Returns the number of bytes actually read
+</ResponseField>
+
+<ResponseField name="Read" type="Result<std::shared_ptr<Buffer>>">
+  <ParamField path="nbytes" type="int64_t" required>
+    Maximum number of bytes to read
+  </ParamField>
+  
+  Reads at most nbytes from the current position. May avoid a memory copy in some cases. Returns a Buffer containing the data
+</ResponseField>
+
+<ResponseField name="Advance" type="Status">
+  <ParamField path="nbytes" type="int64_t" required>
+    Number of bytes to skip
+  </ParamField>
+  
+  Advances or skips the stream by the indicated number of bytes
+</ResponseField>
+
+<ResponseField name="Peek" type="Result<std::string_view>">
+  <ParamField path="nbytes" type="int64_t" required>
+    Maximum number of bytes to peek
+  </ParamField>
+  
+  Returns zero-copy string_view to upcoming bytes without modifying stream position. View becomes invalid after any operation on the stream. May return NotImplemented
+</ResponseField>
+
+<ResponseField name="supports_zero_copy" type="bool">
+  Returns true if InputStream is capable of zero-copy Buffer reads
+</ResponseField>
+
+<ResponseField name="ReadMetadata" type="Result<std::shared_ptr<const KeyValueMetadata>>">
+  Reads and returns stream metadata. If not supported, returns empty metadata or nullptr
+</ResponseField>
+
+<ResponseField name="ReadMetadataAsync" type="Future<std::shared_ptr<const KeyValueMetadata>>">
+  <ParamField path="io_context" type="const IOContext&">
+    I/O context for async operations
+  </ParamField>
+  
+  Reads stream metadata asynchronously
+</ResponseField>
+
+### RandomAccessFile
+
+Interface for random access reading.
+
+```cpp
+class RandomAccessFile : public InputStream, public Seekable
+```
+
+<ResponseField name="GetSize" type="Result<int64_t>">
+  Returns the total file size in bytes. Does not read or move the current position, so is safe to call concurrently
+</ResponseField>
+
+<ResponseField name="Seek" type="Status">
+  <ParamField path="position" type="int64_t" required>
+    Position to seek to
+  </ParamField>
+  
+  Seeks to the specified position in the file
+</ResponseField>
+
+<ResponseField name="ReadAt" type="Result<int64_t>">
+  <ParamField path="position" type="int64_t" required>
+    Position to read from
+  </ParamField>
+  <ParamField path="nbytes" type="int64_t" required>
+    Maximum number of bytes to read
+  </ParamField>
+  <ParamField path="out" type="void*" required>
+    Buffer to read into
+  </ParamField>
+  
+  Reads data from the given position. Thread-safe and does not affect current file position. Returns the number of bytes read
+</ResponseField>
+
+<ResponseField name="ReadAt" type="Result<std::shared_ptr<Buffer>>">
+  <ParamField path="position" type="int64_t" required>
+    Position to read from
+  </ParamField>
+  <ParamField path="nbytes" type="int64_t" required>
+    Maximum number of bytes to read
+  </ParamField>
+  
+  Reads data from the given position. Returns a Buffer containing the data
+</ResponseField>
+
+<ResponseField name="ReadAsync" type="Future<std::shared_ptr<Buffer>>">
+  <ParamField path="io_context" type="const IOContext&" required>
+    I/O context for async operations
+  </ParamField>
+  <ParamField path="position" type="int64_t" required>
+    Position to read from
+  </ParamField>
+  <ParamField path="nbytes" type="int64_t" required>
+    Number of bytes to read
+  </ParamField>
+  
+  Reads data asynchronously from the given position
+</ResponseField>
+
+<ResponseField name="ReadManyAsync" type="std::vector<Future<std::shared_ptr<Buffer>>>">
+  <ParamField path="io_context" type="const IOContext&" required>
+    I/O context for async operations
+  </ParamField>
+  <ParamField path="ranges" type="const std::vector<ReadRange>&" required>
+    Ranges to read
+  </ParamField>
+  
+  Requests multiple reads at once. The filesystem may optimize by coalescing or parallelizing reads. Returns one future per input range
+</ResponseField>
+
+<ResponseField name="WillNeed" type="Status">
+  <ParamField path="ranges" type="const std::vector<ReadRange>&" required>
+    Ranges that will be read soon
+  </ParamField>
+  
+  Hints that the given ranges may be read soon. Some implementations might prefetch data. No guarantee is made
+</ResponseField>
+
+---
+
+## Output Streams
+
+### OutputStream
+
+Interface for sequential writing.
+
+```cpp
+class OutputStream : virtual public FileInterface, public Writable
+```
+
+<ResponseField name="Write" type="Status">
+  <ParamField path="data" type="const void*" required>
+    Data to write
+  </ParamField>
+  <ParamField path="nbytes" type="int64_t" required>
+    Number of bytes to write
+  </ParamField>
+  
+  Writes the given data to the stream. Always processes bytes in full. Data may be written immediately, buffered, or written asynchronously
+</ResponseField>
+
+<ResponseField name="Write" type="Status">
+  <ParamField path="data" type="const std::shared_ptr<Buffer>&" required>
+    Buffer containing data to write
+  </ParamField>
+  
+  Writes the given data to the stream. Since Buffer owns its memory, can avoid a copy if buffering is required
+</ResponseField>
+
+<ResponseField name="Flush" type="Status">
+  Flushes buffered bytes, if any
+</ResponseField>
+
+### WritableFile
+
+Interface for writable files with seeking.
+
+```cpp
+class WritableFile : public OutputStream, public Seekable
+```
+
+<ResponseField name="WriteAt" type="Status">
+  <ParamField path="position" type="int64_t" required>
+    Position to write at
+  </ParamField>
+  <ParamField path="data" type="const void*" required>
+    Data to write
+  </ParamField>
+  <ParamField path="nbytes" type="int64_t" required>
+    Number of bytes to write
+  </ParamField>
+  
+  Writes data at the specified position
+</ResponseField>
+
+---
+
+## I/O Context
+
+### IOContext
+
+Provides context for I/O operations including executor and memory pool.
+
+```cpp
+struct IOContext
+```
+
+<ResponseField name="IOContext" type="">
+  <ParamField path="pool" type="MemoryPool*">
+    Memory pool for allocations
+  </ParamField>
+  <ParamField path="executor" type="Executor*">
+    Executor for async operations
+  </ParamField>
+  <ParamField path="stop_token" type="StopToken">
+    Token for cancellation
+  </ParamField>
+  <ParamField path="external_id" type="int64_t">
+    Application-specific ID
+  </ParamField>
+  
+  Constructs an IOContext
+</ResponseField>
+
+<ResponseField name="pool" type="MemoryPool*">
+  Returns the memory pool
+</ResponseField>
+
+<ResponseField name="executor" type="Executor*">
+  Returns the executor for async operations
+</ResponseField>
+
+<ResponseField name="external_id" type="int64_t">
+  Returns the application-specific ID forwarded to executor task submissions
+</ResponseField>
+
+<ResponseField name="stop_token" type="StopToken">
+  Returns the cancellation token
+</ResponseField>
+
+### ReadRange
+
+Specifies a range of bytes to read.
+
+```cpp
+struct ReadRange {
+  int64_t offset;
+  int64_t length;
+}
+```
+
+<ParamField path="offset" type="int64_t" required>
+  Starting byte offset
+</ParamField>
+
+<ParamField path="length" type="int64_t" required>
+  Number of bytes to read
+</ParamField>
+
+---
+
+## Convenience Functions
+
+### MakeInputStreamIterator
+
+Creates an iterator over fixed-size blocks from an input stream.
+
+```cpp
+Result<Iterator<std::shared_ptr<Buffer>>> MakeInputStreamIterator(
+    std::shared_ptr<InputStream> stream,
+    int64_t block_size)
+```
+
+<ParamField path="stream" type="std::shared_ptr<InputStream>" required>
+  Input stream to iterate over
+</ParamField>
+
+<ParamField path="block_size" type="int64_t" required>
+  Size of each block
+</ParamField>
+
+The iterator yields fixed-size blocks on each Next() call, except the last block which may be smaller. Returns nullptr when end of stream is reached.

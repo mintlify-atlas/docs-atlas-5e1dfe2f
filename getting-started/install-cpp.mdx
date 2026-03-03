@@ -1,0 +1,235 @@
+---
+title: Installing C++ Library
+description: Install the Apache Arrow C++ library for high-performance data processing and analytics
+---
+
+The Apache Arrow C++ library is the foundation of the Arrow project, providing high-performance data structures and algorithms for columnar data processing.
+
+## Pre-compiled Binaries
+
+The easiest way to install Apache Arrow C++ is to use pre-compiled binary packages.
+
+<Note>
+For the most up-to-date installation instructions and packages, visit the official [Apache Arrow installation page](https://arrow.apache.org/install/).
+</Note>
+
+## System Package Managers
+
+Install Arrow C++ using your system's package manager:
+
+<CodeGroup>
+
+```bash Ubuntu/Debian
+# Add Apache Arrow repository
+sudo apt update
+sudo apt install -y -V ca-certificates lsb-release wget
+wget https://apache.jfrog.io/artifactory/arrow/$(lsb_release --id --short | tr 'A-Z' 'a-z')/apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb
+sudo apt install -y -V ./apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb
+sudo apt update
+
+# Install Arrow C++
+sudo apt install -y -V libarrow-dev
+
+# Optional: Install additional Arrow libraries
+sudo apt install -y -V libarrow-glib-dev  # GLib bindings
+sudo apt install -y -V libarrow-dataset-dev  # Dataset API
+sudo apt install -y -V libarrow-flight-dev  # Arrow Flight RPC
+sudo apt install -y -V libparquet-dev  # Parquet support
+```
+
+```bash RHEL/CentOS/Fedora
+# Add Apache Arrow repository
+sudo dnf install -y epel-release || sudo dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-$(cut -d: -f5 /etc/system-release-cpe | cut -d. -f1).noarch.rpm
+sudo dnf config-manager --add-repo https://apache.jfrog.io/artifactory/arrow/centos/$(cut -d: -f5 /etc/system-release-cpe | cut -d. -f1)/apache-arrow.repo
+
+# Install Arrow C++
+sudo dnf install -y arrow-devel
+
+# Optional: Install additional Arrow libraries
+sudo dnf install -y arrow-glib-devel  # GLib bindings
+sudo dnf install -y arrow-dataset-devel  # Dataset API
+sudo dnf install -y parquet-devel  # Parquet support
+```
+
+```bash macOS (Homebrew)
+# Install using Homebrew
+brew install apache-arrow
+
+# This installs the Arrow C++ library with common features
+# including Parquet support
+```
+
+```bash conda
+# Install from conda-forge
+conda install -c conda-forge arrow-cpp
+
+# Or specify additional packages
+conda install -c conda-forge arrow-cpp parquet-cpp
+```
+
+</CodeGroup>
+
+## Verifying Installation
+
+After installation, verify that Arrow C++ is correctly installed:
+
+<Steps>
+
+<Step title="Check pkg-config">
+Verify the Arrow package configuration:
+
+```bash
+pkg-config --modversion arrow
+```
+
+This should output the installed Arrow version.
+</Step>
+
+<Step title="Check header files">
+Ensure the Arrow headers are accessible:
+
+```bash
+ls /usr/include/arrow/ # Linux
+ls /usr/local/include/arrow/ # macOS
+```
+</Step>
+
+<Step title="Test with a simple program">
+Create a simple C++ program to test the installation:
+
+```cpp test.cpp
+#include <arrow/api.h>
+#include <iostream>
+
+int main() {
+    std::cout << "Arrow version: " 
+              << ARROW_VERSION_STRING << std::endl;
+    return 0;
+}
+```
+
+Compile and run:
+
+```bash
+g++ test.cpp -o test $(pkg-config --cflags --libs arrow)
+./test
+```
+</Step>
+
+</Steps>
+
+## Building from Source
+
+For development or custom configurations, you can build Arrow C++ from source:
+
+<Note>
+As of Arrow 23.0.0, building from source requires a C++20 compatible compiler:
+- GCC 11 or later
+- Clang 12 or later  
+- MSVC 2019 16.10 or later
+</Note>
+
+<Steps>
+
+<Step title="Install dependencies">
+<CodeGroup>
+
+```bash Ubuntu/Debian
+sudo apt install -y \
+    build-essential \
+    cmake \
+    git \
+    libssl-dev \
+    libcurl4-openssl-dev
+```
+
+```bash macOS
+brew install cmake git
+```
+
+</CodeGroup>
+</Step>
+
+<Step title="Clone the repository">
+```bash
+git clone https://github.com/apache/arrow.git
+cd arrow/cpp
+```
+</Step>
+
+<Step title="Configure and build">
+```bash
+mkdir build
+cd build
+cmake .. \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DARROW_PARQUET=ON \
+    -DARROW_DATASET=ON
+
+make -j$(nproc)
+sudo make install
+```
+</Step>
+
+</Steps>
+
+<Warning>
+Building from source can take significant time and resources. Pre-compiled binaries are recommended for most users.
+</Warning>
+
+## Common Features
+
+When installing Arrow C++, you can enable additional features:
+
+- **Parquet**: Read/write Apache Parquet files
+- **Dataset API**: Work with multi-file datasets
+- **Flight RPC**: High-performance data transport
+- **Compute**: Expression evaluation and aggregations
+- **CUDA**: GPU acceleration support
+- **S3**: Amazon S3 filesystem support
+- **GCS**: Google Cloud Storage support
+
+Refer to the [C++ Development Documentation](https://arrow.apache.org/docs/dev/developers/cpp/) for detailed feature configuration.
+
+## Troubleshooting
+
+<AccordionGroup>
+
+<Accordion title="pkg-config not finding arrow">
+Ensure the PKG_CONFIG_PATH includes the Arrow installation directory:
+
+```bash
+export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
+```
+</Accordion>
+
+<Accordion title="Linking errors when compiling">
+Make sure to include all required Arrow libraries:
+
+```bash
+g++ program.cpp -o program $(pkg-config --cflags --libs arrow arrow-dataset parquet)
+```
+</Accordion>
+
+<Accordion title="Version conflicts">
+Remove old Arrow installations before installing a new version:
+
+```bash
+# Ubuntu/Debian
+sudo apt remove libarrow-dev
+
+# macOS
+brew uninstall apache-arrow
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Next Steps
+
+Now that you have Arrow C++ installed:
+
+- Explore the [Arrow C++ Examples](https://github.com/apache/arrow/tree/main/cpp/examples)
+- Read the [C++ API Documentation](https://arrow.apache.org/docs/cpp/)
+- Learn about [Memory Management](https://arrow.apache.org/docs/cpp/memory.html)
+- Try working with [Parquet Files](https://arrow.apache.org/docs/cpp/parquet.html)

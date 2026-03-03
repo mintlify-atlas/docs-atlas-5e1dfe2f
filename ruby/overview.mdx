@@ -1,0 +1,156 @@
+---
+title: Ruby Library Overview
+description: Introduction to Red Arrow, the official Ruby bindings for Apache Arrow
+---
+
+# Ruby Library Overview
+
+Red Arrow is the official Ruby bindings for Apache Arrow. It provides a powerful and intuitive interface for working with columnar data in Ruby applications.
+
+## What is Red Arrow?
+
+Red Arrow is built on top of [Apache Arrow GLib](https://github.com/apache/arrow/tree/main/c_glib) using [GObject Introspection](https://wiki.gnome.org/Projects/GObjectIntrospection). This architecture enables:
+
+- **High Performance**: Direct access to Apache Arrow's C++ implementation
+- **Memory Efficiency**: In-memory columnar data storage optimized for analytics
+- **Interoperability**: Seamless data exchange with other Arrow implementations
+- **Rich API**: Ruby-friendly interface for complex data operations
+
+## Key Features
+
+### Flexible Data Creation
+
+Create Arrow tables from multiple sources:
+
+```ruby
+require 'arrow'
+
+# From Ruby hash (types detected automatically)
+table = Arrow::Table.new(
+  'name' => ['Alice', 'Bob', 'Charlie'],
+  'age' => [25, 30, 35]
+)
+
+# From files
+table = Arrow::Table.load('data.arrow')
+table = Arrow::Table.load('data.csv', format: :csv)
+table = Arrow::Table.load('data.parquet', format: :parquet)
+```
+
+### Powerful Data Manipulation
+
+```ruby
+# Filtering with slicer syntax
+table.slice { |slicer| slicer['age'] > 25 }
+
+# Grouping and aggregation
+table.group('department').sum('salary')
+
+# Joining tables
+users.join(orders, [:user_id])
+```
+
+### Multiple File Format Support
+
+Red Arrow supports various data formats:
+
+- **Arrow IPC**: Native Arrow file format (`.arrow`)
+- **CSV**: Comma-separated values
+- **Parquet**: Columnar storage format (requires `red-parquet`)
+- **Streaming**: Read and write streaming data
+
+## Architecture
+
+```
+Ruby Application
+       ↓
+  Red Arrow (Ruby)
+       ↓
+GObject Introspection
+       ↓
+Apache Arrow GLib (C)
+       ↓
+Apache Arrow C++
+```
+
+## Related Packages
+
+The Apache Arrow Ruby ecosystem includes several packages:
+
+- **red-arrow**: Base Apache Arrow bindings (this package)
+- **red-parquet**: Parquet file format support
+- **red-arrow-dataset**: Dataset API for reading from S3 and multiple files
+- **red-arrow-cuda**: CUDA/GPU support
+- **red-arrow-flight**: Arrow Flight RPC framework
+- **red-gandiva**: Gandiva expression compiler
+
+## Use Cases
+
+### Data Analytics
+
+Process large datasets efficiently with Arrow's columnar format:
+
+```ruby
+# Load large dataset
+table = Arrow::Table.load('sales_data.parquet', format: :parquet)
+
+# Perform analytics
+revenue_by_region = table
+  .slice { |s| s['year'] == 2024 }
+  .group('region')
+  .sum('revenue')
+```
+
+### Data Pipeline
+
+Build efficient data transformation pipelines:
+
+```ruby
+# Read from source
+input = Arrow::Table.load('raw_data.csv', format: :csv)
+
+# Transform
+filtered = input.slice { |s| s['status'] == 'active' }
+cleaned = filtered.merge('processed_at' => [Time.now] * filtered.n_rows)
+
+# Write output
+cleaned.save('processed.arrow')
+```
+
+### Data Exchange
+
+Share data between different systems and languages:
+
+```ruby
+# Read data from Python-generated Arrow file
+table = Arrow::Table.load('python_output.arrow')
+
+# Process in Ruby
+result = table.group('category').count
+
+# Save for another system
+result.save('ruby_output.arrow')
+```
+
+## Performance Characteristics
+
+- **Zero-copy reads**: Access data without deserialization overhead
+- **Columnar storage**: Efficient for analytical workloads
+- **SIMD optimization**: Leverages CPU vector instructions
+- **Memory mapping**: Support for memory-mapped file I/O
+
+## System Requirements
+
+Red Arrow requires:
+
+- Ruby 2.7 or later
+- Apache Arrow GLib library
+- GObject Introspection
+
+For JRuby:
+- Arrow Java libraries (automatically managed via jar-dependencies)
+
+## Next Steps
+
+- [Installation Guide](/ruby/installation) - Set up Red Arrow in your project
+- [Basic Usage](/ruby/basic-usage) - Learn core concepts and operations

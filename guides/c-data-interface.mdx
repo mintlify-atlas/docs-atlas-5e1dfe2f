@@ -1,0 +1,580 @@
+---
+title: C Data Interface
+description: Zero-copy data exchange using Arrow C Data Interface
+---
+
+The Arrow C Data Interface provides a minimal, stable set of C definitions for zero-copy data exchange between different libraries, languages, and runtimes. It enables efficient integration without requiring the full Arrow library implementation.
+
+## Overview
+
+The C Data Interface consists of three main components:
+
+1. **ArrowSchema**: Describes the data type and metadata
+2. **ArrowArray**: Contains actual data buffers
+3. **ArrowArrayStream**: Streams multiple arrays
+
+Key benefits:
+- **Zero-copy**: Data is shared, not copied
+- **Language agnostic**: Works across C, C++, Python, R, Julia, Rust, etc.
+- **ABI stable**: Fixed C structures that never change
+- **Minimal dependencies**: Can be vendored into any project
+- **Producer-consumer model**: Clear ownership and lifetime semantics
+
+## Data Structures
+
+### ArrowSchema
+
+Describes the data type:
+
+```c
+struct ArrowSchema {
+  const char* format;         // Type format string
+  const char* name;           // Field name (may be NULL)
+  const char* metadata;       // Optional metadata
+  int64_t flags;              // Flags (nullable, etc.)
+  int64_t n_children;         // Number of child schemas
+  struct ArrowSchema** children;  // Child schemas
+  struct ArrowSchema* dictionary; // Dictionary (if applicable)
+  void (*release)(struct ArrowSchema*);  // Cleanup callback
+  void* private_data;         // Implementation-specific data
+};
+```
+
+### ArrowArray
+
+Contains the actual data:
+
+```c
+struct ArrowArray {
+  int64_t length;             // Number of elements
+  int64_t null_count;         // Number of nulls (-1 if unknown)
+  int64_t offset;             // Logical offset into buffers
+  int64_t n_buffers;          // Number of buffers
+  int64_t n_children;         // Number of child arrays
+  const void** buffers;       // Array of buffer pointers
+  struct ArrowArray** children;  // Child arrays
+  struct ArrowArray* dictionary; // Dictionary (if applicable)
+  void (*release)(struct ArrowArray*);  // Cleanup callback
+  void* private_data;         // Implementation-specific data
+};
+```
+
+### ArrowArrayStream
+
+Streams multiple arrays:
+
+```c
+struct ArrowArrayStream {
+  int (*get_schema)(struct ArrowArrayStream*, struct ArrowSchema* out);
+  int (*get_next)(struct ArrowArrayStream*, struct ArrowArray* out);
+  const char* (*get_last_error)(struct ArrowArrayStream*);
+  void (*release)(struct ArrowArrayStream*);
+  void* private_data;
+};
+```
+
+## Exporting Data (Producer)
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/c/bridge.h>
+    #include <arrow/api.h>
+    
+    using namespace arrow;
+    
+    // Export an Array
+    auto array = ArrayFromJSON(int64(), "[1, 2, 3, null, 5]");
+    
+    struct ArrowArray c_array;
+    struct ArrowSchema c_schema;
+    
+    // Export to C structures
+    ARROW_RETURN_NOT_OK(
+        ExportArray(*array, &c_array, &c_schema));
+    
+    // Pass c_array and c_schema to consumer
+    // Consumer must call release callbacks when done
+    
+    // Export a RecordBatch
+    auto schema = arrow::schema({
+        field("id", int64()),
+        field("name", utf8())
+    });
+    
+    auto batch = RecordBatch::Make(
+        schema, 3,
+        {ArrayFromJSON(int64(), "[1, 2, 3]"),
+         ArrayFromJSON(utf8(), "[\"Alice\", \"Bob\", \"Charlie\"]")
+        });
+    
+    ARROW_RETURN_NOT_OK(
+        ExportRecordBatch(*batch, &c_array, &c_schema));
+    
+    // Export a Schema only
+    ARROW_RETURN_NOT_OK(
+        ExportSchema(*schema, &c_schema));
+    
+    // Export a RecordBatchReader (stream)
+    std::vector<std::shared_ptr<RecordBatch>> batches = {batch};
+    ARROW_ASSIGN_OR_RAISE(auto reader,
+        RecordBatchReader::Make(batches, schema));
+    
+    struct ArrowArrayStream c_stream;
+    ARROW_RETURN_NOT_OK(
+        ExportRecordBatchReader(reader, &c_stream));
+    ```
+  </Tab>
+  
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    from pyarrow.cffi import ffi
+    
+    # Create data
+    array = pa.array([1, 2, 3, None, 5])
+    
+    # Export array - returns pointers to C structures
+    # These can be passed to other libraries/processes
+    schema_ptr = ffi.new("struct ArrowSchema*")
+    array_ptr = ffi.new("struct ArrowArray*")
+    
+    array._export_to_c(array_ptr[0], schema_ptr[0])
+    
+    # Pass schema_ptr and array_ptr to consumer
+    # Consumer must call release when done
+    
+    # Export a table as stream
+    table = pa.table({
+        'id': [1, 2, 3],
+        'name': ['Alice', 'Bob', 'Charlie']
+    })
+    
+    stream_ptr = ffi.new("struct ArrowArrayStream*")
+    table._export_to_c_as_stream(stream_ptr[0])
+    ```
+  </Tab>
+  
+  <Tab title="Rust">
+    ```rust
+    use arrow::array::{Int64Array, Array};
+    use arrow::ffi;
+    
+    // Create array
+    let array = Int64Array::from(vec![Some(1), Some(2), None, Some(4)]);
+    
+    // Export to C Data Interface
+    let (array_ffi, schema_ffi) = ffi::to_ffi(&array.to_data()).unwrap();
+    
+    // Pass to consumer (C code, Python, etc.)
+    // Consumer is responsible for calling release
+    
+    // array_ffi and schema_ffi are FFI structs
+    // that can be passed across language boundaries
+    ```
+  </Tab>
+</Tabs>
+
+## Importing Data (Consumer)
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/c/bridge.h>
+    
+    // Import an Array
+    struct ArrowArray c_array;  // Received from producer
+    struct ArrowSchema c_schema;
+    
+    ARROW_ASSIGN_OR_RAISE(auto array,
+        ImportArray(&c_array, &c_schema));
+    
+    // c_array and c_schema are now "moved" and invalid
+    // Producer's release callback will be called when array is destroyed
+    
+    std::cout << "Array length: " << array->length() << std::endl;
+    
+    // Import a RecordBatch
+    ARROW_ASSIGN_OR_RAISE(auto batch,
+        ImportRecordBatch(&c_array, &c_schema));
+    
+    std::cout << "Batch rows: " << batch->num_rows() << std::endl;
+    
+    // Import a Schema only
+    ARROW_ASSIGN_OR_RAISE(auto schema,
+        ImportSchema(&c_schema));
+    
+    // Import a RecordBatchReader (stream)
+    struct ArrowArrayStream c_stream;  // Received from producer
+    
+    ARROW_ASSIGN_OR_RAISE(auto reader,
+        ImportRecordBatchReader(&c_stream));
+    
+    // Read batches
+    std::shared_ptr<RecordBatch> batch;
+    while (true) {
+      ARROW_ASSIGN_OR_RAISE(batch, reader->Next());
+      if (!batch) break;
+      // Process batch
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    from pyarrow.cffi import ffi
+    
+    # Receive C structures from producer
+    # schema_ptr and array_ptr are FFI pointers
+    
+    # Import array
+    array = pa.Array._import_from_c(array_ptr[0], schema_ptr[0])
+    
+    print(f"Array length: {len(array)}")
+    
+    # Import as RecordBatch
+    batch = pa.RecordBatch._import_from_c(array_ptr[0], schema_ptr[0])
+    
+    print(f"Batch rows: {batch.num_rows}")
+    
+    # Import stream
+    reader = pa.RecordBatchReader._import_from_c(stream_ptr[0])
+    
+    for batch in reader:
+        print(f"Batch: {batch.num_rows} rows")
+    
+    # Convert to table
+    table = reader.read_all()
+    ```
+  </Tab>
+  
+  <Tab title="Rust">
+    ```rust
+    use arrow::ffi;
+    use arrow::array::ArrayData;
+    
+    // Receive FFI structures from producer
+    // array_ffi: FFIArrowArray
+    // schema_ffi: FFIArrowSchema
+    
+    // Import from C Data Interface
+    let array_data = unsafe {
+        ffi::from_ffi(array_ffi, &schema_ffi).unwrap()
+    };
+    
+    // Convert to typed array
+    use arrow::array::Int64Array;
+    let array = Int64Array::from(array_data);
+    
+    println!("Array length: {}", array.len());
+    ```
+  </Tab>
+</Tabs>
+
+## Device Memory Support
+
+The C Data Interface supports GPU and device memory:
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/c/bridge.h>
+    
+    // Export device array (e.g., CUDA)
+    std::shared_ptr<Array> cuda_array;  // Array with CUDA buffers
+    std::shared_ptr<Device::SyncEvent> sync_event;
+    
+    struct ArrowDeviceArray c_device_array;
+    struct ArrowSchema c_schema;
+    
+    ARROW_RETURN_NOT_OK(
+        ExportDeviceArray(*cuda_array, sync_event,
+                         &c_device_array, &c_schema));
+    
+    // c_device_array includes device_type and device_id
+    // Consumer can synchronize using sync_event if needed
+    
+    // Import device array
+    ARROW_ASSIGN_OR_RAISE(auto imported_array,
+        ImportDeviceArray(&c_device_array, &c_schema));
+    
+    // Array buffers are on the device specified in c_device_array
+    ```
+  </Tab>
+  
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    from pyarrow.cffi import ffi
+    
+    # Export device array (e.g., CUDA)
+    # Assuming cuda_array is on GPU
+    
+    device_array_ptr = ffi.new("struct ArrowDeviceArray*")
+    schema_ptr = ffi.new("struct ArrowSchema*")
+    
+    cuda_array._export_to_c_device(
+        device_array_ptr[0], schema_ptr[0]
+    )
+    
+    # Import device array
+    imported_array = pa.Array._import_from_c_device(
+        device_array_ptr[0], schema_ptr[0]
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Integration Examples
+
+### C++ to Python (Zero-Copy)
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    // C++ extension module
+    #include <pybind11/pybind11.h>
+    #include <arrow/c/bridge.h>
+    #include <arrow/python/pyarrow.h>
+    
+    namespace py = pybind11;
+    
+    py::object create_arrow_array() {
+      auto array = arrow::ArrayFromJSON(
+          arrow::int64(), "[1, 2, 3, 4, 5]"
+      ).ValueOrDie();
+      
+      // Export to Python using C Data Interface
+      return py::cast(arrow::py::wrap_array(array));
+    }
+    
+    PYBIND11_MODULE(example, m) {
+      m.def("create_arrow_array", &create_arrow_array);
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Python">
+    ```python
+    import example  # C++ extension
+    import pyarrow as pa
+    
+    # Get array from C++ (zero-copy)
+    array = example.create_arrow_array()
+    
+    print(f"Type: {array.type}")
+    print(f"Length: {len(array)}")
+    print(f"Data: {array.to_pylist()}")
+    
+    # No data was copied - array shares memory with C++
+    ```
+  </Tab>
+</Tabs>
+
+### Python to R (via C Interface)
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import rpy2.robjects as ro
+    from rpy2.robjects import pandas2ri
+    
+    # Create Arrow table in Python
+    table = pa.table({
+        'x': [1, 2, 3],
+        'y': ['a', 'b', 'c']
+    })
+    
+    # Export to R using C Data Interface
+    # R's arrow package can import via C interface
+    ro.r('''
+    library(arrow)
+    receive_table <- function(ptr) {
+      # Import from C Data Interface pointer
+      arrow::Array$import_from_c(ptr)
+    }
+    ''')
+    ```
+  </Tab>
+  
+  <Tab title="R">
+    ```r
+    library(arrow)
+    
+    # Create table in R
+    tbl <- arrow_table(
+      x = c(1, 2, 3),
+      y = c("a", "b", "c")
+    )
+    
+    # Export to external process via C Data Interface
+    # The C struct pointers can be passed to any consumer
+    schema_ptr <- tbl$schema$export_to_c()
+    array_ptr <- tbl$export_to_c()
+    
+    # Pass pointers to consumer (Python, C++, etc.)
+    ```
+  </Tab>
+</Tabs>
+
+### Rust Integration
+
+<Tabs>
+  <Tab title="Rust">
+    ```rust
+    use arrow::array::{Int64Array, RecordBatch};
+    use arrow::ffi;
+    use arrow::datatypes::{Schema, Field, DataType};
+    use std::sync::Arc;
+    
+    // Create data in Rust
+    fn export_data() -> (ffi::FFIArrowArray, ffi::FFIArrowSchema) {
+        let array = Int64Array::from(vec![1, 2, 3, 4, 5]);
+        let data = array.to_data();
+        
+        // Export to C Data Interface
+        ffi::to_ffi(&data).unwrap()
+    }
+    
+    // Import from C Data Interface
+    fn import_data(
+        array_ffi: ffi::FFIArrowArray,
+        schema_ffi: &ffi::FFIArrowSchema
+    ) -> Int64Array {
+        // Safety: Ensure FFI structs are valid
+        let array_data = unsafe {
+            ffi::from_ffi(array_ffi, schema_ffi).unwrap()
+        };
+        
+        Int64Array::from(array_data)
+    }
+    
+    // Export RecordBatch
+    fn export_batch() -> (ffi::FFIArrowArray, ffi::FFIArrowSchema) {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("a", DataType::Int64, false),
+            Field::new("b", DataType::Utf8, false),
+        ]));
+        
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int64Array::from(vec![1, 2, 3])),
+                Arc::new(arrow::array::StringArray::from(vec!["a", "b", "c"])),
+            ]
+        ).unwrap();
+        
+        ffi::to_ffi(&batch.to_data()).unwrap()
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Streaming Protocol
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    // Producer: Export a stream
+    std::vector<std::shared_ptr<RecordBatch>> batches;
+    // ... populate batches ...
+    
+    ARROW_ASSIGN_OR_RAISE(auto reader,
+        RecordBatchReader::Make(batches, schema));
+    
+    struct ArrowArrayStream c_stream;
+    ARROW_RETURN_NOT_OK(
+        ExportRecordBatchReader(reader, &c_stream));
+    
+    // Consumer: Import and iterate stream
+    ARROW_ASSIGN_OR_RAISE(auto imported_reader,
+        ImportRecordBatchReader(&c_stream));
+    
+    // Get schema
+    auto schema = imported_reader->schema();
+    
+    // Iterate batches
+    std::shared_ptr<RecordBatch> batch;
+    while (true) {
+      ARROW_ASSIGN_OR_RAISE(batch, imported_reader->Next());
+      if (!batch) break;  // End of stream
+      
+      std::cout << "Received batch with " 
+                << batch->num_rows() << " rows" << std::endl;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Python">
+    ```python
+    from pyarrow.cffi import ffi
+    
+    # Producer: Export a stream
+    table = pa.table({'x': range(1000)})
+    
+    stream_ptr = ffi.new("struct ArrowArrayStream*")
+    table._export_to_c_as_stream(stream_ptr[0])
+    
+    # Consumer: Import and iterate stream
+    reader = pa.RecordBatchReader._import_from_c(stream_ptr[0])
+    
+    # Get schema
+    schema = reader.schema
+    
+    # Iterate batches
+    for batch in reader:
+        print(f"Received batch with {batch.num_rows} rows")
+    
+    # Or read all at once
+    table = reader.read_all()
+    ```
+  </Tab>
+</Tabs>
+
+## Memory Management
+
+Key points about memory management:
+
+1. **Producer owns data**: Until `release` callback is called
+2. **Consumer calls release**: Must call exactly once when done
+3. **Move semantics**: Import functions "move" the C structs
+4. **No double-free**: Release callback handles cleanup
+5. **Reference counting**: Arrow implementations use refcounting internally
+
+```cpp
+// Example of proper release handling
+struct ArrowArray c_array;
+struct ArrowSchema c_schema;
+
+// Export (producer)
+ExportArray(*array, &c_array, &c_schema);
+
+// At this point:
+// - c_array.release != NULL (producer set cleanup callback)
+// - Producer's data is kept alive
+
+// Import (consumer) - MOVES the structs
+auto imported = ImportArray(&c_array, &c_schema);
+
+// After import:
+// - c_array.release == NULL (moved)
+// - c_schema.release == NULL (moved)
+// - imported holds the data
+// - When imported is destroyed, original release callbacks are called
+```
+
+## Performance Best Practices
+
+1. **Zero-copy whenever possible**: C Data Interface enables true zero-copy
+2. **Minimize conversions**: Keep data in Arrow format across boundaries
+3. **Batch operations**: Transfer record batches, not individual rows
+4. **Use streams**: For large datasets, stream data incrementally
+5. **Device placement**: Keep GPU data on GPU when possible
+
+## Related Topics
+
+- [Arrow Flight RPC](/guides/flight-rpc) - Network transport layer
+- [IPC Streaming](/guides/ipc-streaming) - Serialization format
+- [Arrow Flight SQL](/guides/flight-sql) - SQL interface

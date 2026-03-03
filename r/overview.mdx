@@ -1,0 +1,221 @@
+---
+title: "R Library Overview"
+description: "Get started with Apache Arrow in R for high-performance data processing and analysis with familiar dplyr syntax"
+---
+
+The arrow R package provides a standard way to use Apache Arrow in R. It provides a low-level interface to the Arrow C++ library and high-level tools designed to feel natural to R users. The package enables high-performance data processing, efficient file I/O, and seamless integration with the tidyverse ecosystem.
+
+## What is Apache Arrow?
+
+Apache Arrow is a software development platform for building high-performance applications that process and transport large data sets. It is designed to:
+
+- Improve the performance of data analysis methods
+- Increase the efficiency of moving data between systems or programming languages
+- Provide a standardized, language-agnostic columnar memory format
+- Enable zero-copy data sharing between R and Python
+
+## Package Conventions
+
+The arrow R package builds on top of the Arrow C++ library using two complementary interfaces:
+
+### Low-Level R6 Classes
+
+Core Arrow functionality is exposed through R6 classes using "TitleCase" naming:
+
+- **Tabular data structures**: `Table`, `RecordBatch`, and `Dataset`
+- **Vector-like structures**: `Array` and `ChunkedArray`
+- **I/O classes**: `ParquetFileReader` and `CsvTableReader`
+
+### High-Level Functions
+
+Familiar snake_case functions provide a more R-like interface:
+
+- `arrow_table()` - Create Arrow tables
+- `read_parquet()` - Open Parquet files
+- `read_csv_arrow()` - Read CSV files with Arrow
+
+## Creating Arrow Tables
+
+Arrow Tables are analogous to data frames and have similar behavior:
+
+```r
+library(arrow, warn.conflicts = FALSE)
+
+# Create an Arrow Table
+dat <- arrow_table(x = 1:3, y = c("a", "b", "c"))
+dat
+#> Table
+#> 3 rows x 2 columns
+#> $x <int32>
+#> $y <string>
+
+# Subset like a data frame
+dat[1:2, ]
+
+# Extract columns
+dat$y
+#> ChunkedArray
+#> <string>
+#> [
+#>   [
+#>     "a",
+#>     "b",
+#>     "c"
+#>   ]
+#> ]
+```
+
+Individual columns are represented as `ChunkedArray` objects, which are roughly analogous to vectors in R.
+
+## Converting to Data Frames
+
+Arrow Tables can be converted to R data frames using `as.data.frame()`:
+
+```r
+as.data.frame(dat)
+#>   x y
+#> 1 1 a
+#> 2 2 b
+#> 3 3 c
+```
+
+When converting, Arrow data types (like `int32` from C++) are mapped to their R equivalents (like integer).
+
+## Key Features
+
+### High-Performance File I/O
+
+Read and write data in multiple formats:
+
+- **Parquet**: Efficient columnar format for analytics
+- **Arrow/Feather**: Optimized for speed and interoperability
+- **CSV**: Fast reading and writing of delimited text
+- **JSON**: Read JSON data files
+
+```r
+library(dplyr, warn.conflicts = FALSE)
+
+# Write Parquet file
+file_path <- tempfile(fileext = ".parquet")
+write_parquet(starwars, file_path)
+
+# Read as data frame (default)
+sw_frame <- read_parquet(file_path)
+
+# Read as Arrow Table
+sw_table <- read_parquet(file_path, as_data_frame = FALSE)
+```
+
+### Multi-File Datasets
+
+Work with datasets larger than memory, split across multiple files:
+
+```r
+# Create partitioned dataset
+random_data <- data.frame(
+  x = rnorm(100000),
+  y = rnorm(100000),
+  subset = sample(10, 100000, replace = TRUE)
+)
+
+dataset_path <- file.path(tempdir(), "random_data")
+
+random_data |>
+  group_by(subset) |>
+  write_dataset(dataset_path)
+
+# Open dataset without loading into memory
+dset <- open_dataset(dataset_path)
+```
+
+### dplyr Integration
+
+Analyze Arrow data with familiar dplyr syntax:
+
+```r
+dset |>
+  group_by(subset) |>
+  summarize(mean_x = mean(x), min_y = min(y)) |>
+  filter(mean_x > 0) |>
+  arrange(subset) |>
+  collect()
+```
+
+<Note>
+No computations are performed until you call `collect()` or `compute()`. This lazy evaluation allows the Arrow C++ compute engine to optimize query execution.
+</Note>
+
+### Cloud Storage Support
+
+Read and write data directly from Amazon S3 and Google Cloud Storage:
+
+```r
+# Connect to S3 bucket
+bucket <- s3_bucket("arrow-datasets/nyc-taxi")
+nyc_taxi <- open_dataset(bucket)
+
+# Query cloud data with dplyr
+nyc_taxi |>
+  filter(year == 2019) |>
+  group_by(passenger_count) |>
+  summarize(avg_fare = mean(fare_amount)) |>
+  collect()
+```
+
+### R and Python Interoperability
+
+Share data between R and Python with zero-copy efficiency using reticulate:
+
+```r
+library(reticulate)
+
+# Convert R Arrow Table to Python
+sw_table_python <- r_to_py(sw_table)
+
+# Only metadata is copied, not the actual data values
+# This is much faster than copying data frames
+```
+
+## Performance Benefits
+
+Arrow provides significant performance advantages:
+
+1. **Columnar memory format**: Optimized for analytical queries
+2. **Zero-copy reads**: Access data without copying into R memory
+3. **Lazy evaluation**: Queries are optimized before execution
+4. **Parallel processing**: Multi-file datasets can be processed in parallel
+5. **Predicate pushdown**: Filters are applied during file scanning
+
+## Data Structures
+
+Arrow provides several data structures for different use cases:
+
+- **Table**: In-memory columnar data (primary structure for analysis)
+- **Dataset**: On-disk data that may be larger than memory
+- **RecordBatch**: Building blocks for Tables (usually not used directly)
+- **Array**: One-dimensional data structure
+- **ChunkedArray**: Collection of Arrays forming a logical column
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/r/installation">
+    Install the arrow package and configure optional features
+  </Card>
+  <Card title="Data Wrangling" icon="code" href="/r/data-wrangling">
+    Learn to use dplyr syntax with Arrow data
+  </Card>
+  <Card title="Reading and Writing" icon="file" href="/r/reading-writing">
+    Work with Parquet, CSV, and other file formats
+  </Card>
+  <Card title="Datasets" icon="database" href="/r/dataset">
+    Handle multi-file and larger-than-memory data
+  </Card>
+</CardGroup>
+
+## Additional Resources
+
+- [Arrow R Package Documentation](https://arrow.apache.org/docs/r/)
+- [Apache Arrow R Cookbook](https://arrow.apache.org/cookbook/r/index.html)
+- [Arrow for R Cheatsheet](https://github.com/apache/arrow/blob/-/r/cheatsheet/arrow-cheatsheet.pdf)
+- [R for Data Science - Arrow Chapter](https://r4ds.hadley.nz/arrow)

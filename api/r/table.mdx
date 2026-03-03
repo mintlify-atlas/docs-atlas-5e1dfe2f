@@ -1,0 +1,453 @@
+---
+title: Table Functions
+description: Apache Arrow R API reference for Table class and functions
+---
+
+## Overview
+
+A `Table` is a sequence of chunked arrays. Tables have a similar interface to record batches, but they can be composed from multiple record batches or chunked arrays. Tables are data-frame-like, and many methods you expect to work on a `data.frame` are implemented for `Table`.
+
+## Table Class
+
+### Factory Method
+
+#### Table$create()
+
+Create a Table from various inputs.
+
+<ParamField path="..." type="various">
+  A `data.frame`, a named set of Arrays or vectors, or RecordBatch objects. If given a mixture of data.frames and named vectors, the inputs will be autospliced together
+</ParamField>
+
+<ParamField path="schema" type="Schema" default="NULL">
+  A Schema, or NULL (the default) to infer the schema from the data
+</ParamField>
+
+```r
+tbl <- arrow_table(name = rownames(mtcars), mtcars)
+dim(tbl)
+names(tbl)
+```
+
+### Methods
+
+#### $column()
+
+Extract a `ChunkedArray` by integer position from the table.
+
+<ParamField path="i" type="integer">
+  Zero-based column index
+</ParamField>
+
+```r
+tbl <- arrow_table(mtcars)
+tbl$column(0)  # First column
+```
+
+#### $ColumnNames()
+
+Get all column names (called by `names(tab)`).
+
+```r
+tbl <- arrow_table(mtcars)
+tbl$ColumnNames()
+```
+
+#### $nbytes()
+
+Total number of bytes consumed by the elements of the table.
+
+```r
+tbl <- arrow_table(mtcars)
+tbl$nbytes()
+```
+
+#### $RenameColumns()
+
+Set all column names (called by `names(tab) <- value`).
+
+<ParamField path="value" type="character">
+  New column names
+</ParamField>
+
+```r
+tbl <- arrow_table(mtcars)
+tbl$RenameColumns(c("miles_per_gallon", "cylinders", ...))
+```
+
+#### $GetColumnByName()
+
+Extract a `ChunkedArray` by string name.
+
+<ParamField path="name" type="character">
+  Column name
+</ParamField>
+
+```r
+tbl <- arrow_table(mtcars)
+tbl$GetColumnByName("mpg")
+```
+
+#### $RemoveColumn()
+
+Remove a column by index.
+
+<ParamField path="i" type="integer">
+  Zero-based column index
+</ParamField>
+
+#### $AddColumn()
+
+Add a new column at the specified position.
+
+<ParamField path="i" type="integer">
+  Zero-based position to insert the column
+</ParamField>
+
+<ParamField path="new_field" type="Field">
+  A Field object defining the column name and type
+</ParamField>
+
+<ParamField path="value" type="Array | ChunkedArray">
+  The column data
+</ParamField>
+
+#### $SetColumn()
+
+Replace a column at the specified position.
+
+<ParamField path="i" type="integer">
+  Zero-based column index
+</ParamField>
+
+<ParamField path="new_field" type="Field">
+  A Field object defining the column name and type
+</ParamField>
+
+<ParamField path="value" type="Array | ChunkedArray">
+  The column data
+</ParamField>
+
+#### $ReplaceSchemaMetadata()
+
+Replace the schema metadata.
+
+<ParamField path="new" type="list">
+  Named list of metadata
+</ParamField>
+
+#### $field()
+
+Extract a `Field` from the table schema by integer position.
+
+<ParamField path="i" type="integer">
+  Zero-based field index
+</ParamField>
+
+#### $SelectColumns()
+
+Return new `Table` with specified columns.
+
+<ParamField path="indices" type="integer vector">
+  Zero-based column indices to select
+</ParamField>
+
+```r
+tbl <- arrow_table(mtcars)
+tbl$SelectColumns(c(0, 1, 2))  # Select first 3 columns
+```
+
+#### $Slice()
+
+Create a zero-copy view starting at the indicated integer offset.
+
+<ParamField path="offset" type="integer">
+  Starting row position (zero-based)
+</ParamField>
+
+<ParamField path="length" type="integer" default="NULL">
+  Number of rows to include. If NULL, goes to the end of the table
+</ParamField>
+
+```r
+tbl <- arrow_table(mtcars)
+tbl$Slice(5, 10)  # Rows 5-14
+```
+
+#### $Take()
+
+Return a `Table` with rows at positions given by integers.
+
+<ParamField path="i" type="integer vector | Array | ChunkedArray">
+  Row positions to take. If an Arrow Array or ChunkedArray, it will be coerced to an R vector
+</ParamField>
+
+```r
+tbl <- arrow_table(mtcars)
+tbl$Take(c(1, 3, 5, 7))
+```
+
+#### $Filter()
+
+Return a `Table` with rows at positions where logical vector is TRUE.
+
+<ParamField path="i" type="logical vector | Array | ChunkedArray">
+  Logical vector or Arrow boolean-type (Chunked)Array
+</ParamField>
+
+<ParamField path="keep_na" type="logical" default="TRUE">
+  Whether to keep NA values
+</ParamField>
+
+```r
+tbl <- arrow_table(mtcars)
+tbl$Filter(tbl$column(0) > 20)
+```
+
+#### $SortIndices()
+
+Return an `Array` of integer row positions that can be used to rearrange the `Table`.
+
+<ParamField path="names" type="character vector">
+  Column names to sort by
+</ParamField>
+
+<ParamField path="descending" type="logical" default="FALSE">
+  Whether to sort in descending order. Can be a logical vector of length one or of the same length as `names`
+</ParamField>
+
+```r
+tbl <- arrow_table(mtcars)
+indices <- tbl$SortIndices(c("cyl", "mpg"))
+sorted_tbl <- tbl$Take(indices)
+```
+
+#### $serialize()
+
+Write the table to the given OutputStream.
+
+<ParamField path="output_stream" type="OutputStream">
+  The output stream to write to
+</ParamField>
+
+<ParamField path="..." type="various">
+  Additional arguments
+</ParamField>
+
+#### $to_data_frame()
+
+Convert the table to an R data.frame.
+
+```r
+tbl <- arrow_table(mtcars)
+df <- tbl$to_data_frame()
+```
+
+#### $cast()
+
+Alter the schema of the table.
+
+<ParamField path="target_schema" type="Schema">
+  The target schema. Must have the same column names as the current schema
+</ParamField>
+
+<ParamField path="safe" type="logical" default="TRUE">
+  Whether to check for overflows or other unsafe conversions
+</ParamField>
+
+<ParamField path="options" type="CastOptions" default="cast_options(safe)">
+  Casting options
+</ParamField>
+
+```r
+tbl <- arrow_table(mtcars)
+new_schema <- schema(mpg = float64(), cyl = int8(), ...)
+tbl$cast(new_schema)
+```
+
+#### $Equals()
+
+Check if this table is equal to another.
+
+<ParamField path="other" type="Table">
+  Another Table to compare with
+</ParamField>
+
+<ParamField path="check_metadata" type="logical" default="FALSE">
+  Whether to compare metadata as well
+</ParamField>
+
+```r
+tbl1 <- arrow_table(mtcars)
+tbl2 <- arrow_table(mtcars)
+tbl1$Equals(tbl2)  # TRUE
+```
+
+#### $Validate()
+
+Perform validation checks on the table.
+
+#### $ValidateFull()
+
+Perform full validation checks on the table.
+
+### Active Bindings
+
+#### $num_columns
+
+Number of columns in the table.
+
+```r
+tbl <- arrow_table(mtcars)
+tbl$num_columns  # 11
+```
+
+#### $num_rows
+
+Number of rows in the table.
+
+```r
+tbl <- arrow_table(mtcars)
+tbl$num_rows  # 32
+```
+
+#### $schema
+
+The Schema of the table. Can be read or replaced.
+
+```r
+tbl <- arrow_table(mtcars)
+tbl$schema
+
+# Replace schema
+tbl$schema <- new_schema
+```
+
+#### $columns
+
+Returns a list of `ChunkedArray`s.
+
+```r
+tbl <- arrow_table(mtcars)
+tbl$columns
+```
+
+#### $metadata
+
+Returns the key-value metadata of the Schema as a named list. Modify or replace by assigning in.
+
+```r
+tbl <- arrow_table(mtcars)
+tbl$metadata
+
+# Set metadata
+tbl$metadata <- list(description = "Motor Trend Car Road Tests")
+```
+
+## S3 Methods
+
+Tables support many data.frame-like operations:
+
+### Subsetting
+
+```r
+tbl <- arrow_table(mtcars)
+
+# Column access
+tbl$mpg
+tbl[["cyl"]]
+tbl[, c("gear", "hp", "wt")]
+
+# Row and column access
+as.data.frame(tbl[4:8, c("gear", "hp", "wt")])
+```
+
+### names(), dim(), nrow(), ncol()
+
+```r
+tbl <- arrow_table(mtcars)
+names(tbl)
+dim(tbl)
+nrow(tbl)
+ncol(tbl)
+```
+
+### head() and tail()
+
+```r
+tbl <- arrow_table(mtcars)
+head(tbl)
+tail(tbl, n = 10)
+```
+
+## Helper Functions
+
+### arrow_table()
+
+Alias for `Table$create()`.
+
+<ParamField path="..." type="various">
+  A `data.frame` or a named set of Arrays or vectors
+</ParamField>
+
+<ParamField path="schema" type="Schema" default="NULL">
+  A Schema, or NULL to infer from data
+</ParamField>
+
+```r
+tbl <- arrow_table(name = rownames(mtcars), mtcars)
+dim(tbl)
+```
+
+### as_arrow_table()
+
+Convert a single object to an Arrow Table.
+
+<ParamField path="x" type="object">
+  An object to convert to an Arrow Table
+</ParamField>
+
+<ParamField path="schema" type="Schema" default="NULL">
+  An optional schema
+</ParamField>
+
+```r
+# Use as_arrow_table() for a single object
+as_arrow_table(data.frame(col1 = 1, col2 = "two"))
+
+# Use arrow_table() to create from columns
+arrow_table(col1 = 1, col2 = "two")
+```
+
+### concat_tables()
+
+Concatenate one or more Tables into a single table. This operation does not copy array data.
+
+<ParamField path="..." type="Table | RecordBatch">
+  One or more Table or RecordBatch objects. RecordBatch objects will be automatically converted to Tables
+</ParamField>
+
+<ParamField path="unify_schemas" type="logical" default="TRUE">
+  If TRUE, the schemas will be unified with fields of the same name being merged, then each table will be promoted to the unified schema before being concatenated
+</ParamField>
+
+```r
+tbl <- arrow_table(name = rownames(mtcars), mtcars)
+prius <- arrow_table(name = "Prius", mpg = 58, cyl = 4, disp = 1.8)
+combined <- concat_tables(tbl, prius)
+tail(combined)$to_data_frame()
+```
+
+### rbind() and cbind()
+
+```r
+# Row binding
+tbl1 <- arrow_table(mtcars[1:16, ])
+tbl2 <- arrow_table(mtcars[17:32, ])
+rbind(tbl1, tbl2)
+
+# Column binding
+tbl_a <- arrow_table(mtcars[, 1:5])
+tbl_b <- arrow_table(mtcars[, 6:11])
+cbind(tbl_a, tbl_b)
+```

@@ -1,0 +1,471 @@
+---
+title: Building R Package from Source
+description: Guide to building the Arrow R package from source with system dependencies and bundled C++ libraries
+---
+
+This guide covers building the Arrow R package from source. The R package can either use system-installed Arrow C++ libraries or bundle its own.
+
+## System Requirements
+
+- R 4.0 or later
+- C++20 compiler (R 4.3+ on Windows)
+- CMake 3.25 or higher (when building with bundled C++)
+- Arrow C++ libraries (unless bundling)
+
+<Warning>
+As of Arrow version 23.0.0, a C++20 compiler is required. This means:
+- **Windows**: Requires R 4.3 or later (R 4.2 has incomplete C++20 support)
+- **CentOS 7**: Default compiler is too old; use a newer gcc/clang
+</Warning>
+
+## Installation Methods
+
+There are several ways to install the Arrow R package:
+
+### From CRAN (Recommended for Users)
+
+The simplest method for most users:
+
+```r
+install.packages("arrow")
+```
+
+This typically works without additional dependencies on Windows and macOS.
+
+### From R-universe
+
+R-universe provides pre-compiled binaries:
+
+```r
+install.packages("arrow", 
+  repos = c("https://apache.r-universe.dev", "https://cloud.r-project.org"))
+```
+
+### From Conda
+
+```bash
+conda install -c conda-forge --strict-channel-priority r-arrow
+```
+
+## Building from Source
+
+For developers contributing to Arrow R, you'll want to build from source.
+
+### Method 1: Using System Arrow C++ Libraries
+
+If Arrow C++ is already installed on your system:
+
+<Steps>
+
+### Install Arrow C++ libraries
+
+<CodeGroup>
+
+```bash Ubuntu/Debian
+# Add Apache Arrow repository
+wget https://apache.jfrog.io/artifactory/arrow/$(lsb_release --id --short | tr 'A-Z' 'a-z')/apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb
+sudo apt install -y ./apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb
+sudo apt update
+
+# Install Arrow C++ libraries
+sudo apt install -y libarrow-dev libparquet-dev
+```
+
+```bash Homebrew (macOS)
+brew install apache-arrow
+```
+
+```bash Conda
+conda install -c conda-forge arrow-cpp
+```
+
+</CodeGroup>
+
+### Set environment variables
+
+```bash
+# Point to Arrow installation
+export ARROW_HOME=/usr/local  # or path to Arrow installation
+```
+
+### Install R package
+
+```r
+# From CRAN (with system libraries)
+install.packages("arrow")
+
+# Or from source directory
+R CMD INSTALL arrow/r
+```
+
+</Steps>
+
+### Method 2: Bundling Arrow C++ (Development Builds)
+
+For development, the R package can bundle Arrow C++ libraries:
+
+<Steps>
+
+### Clone Arrow repository
+
+```bash
+git clone https://github.com/apache/arrow.git
+cd arrow
+```
+
+### Install R package dependencies
+
+```r
+# In R console
+install.packages(c("devtools", "roxygen2", "pkgdown"))
+devtools::install_dev_deps("r")
+```
+
+### Build with bundled C++ libraries
+
+From the `r/` subdirectory:
+
+```bash
+cd r
+
+# Set options for bundled build
+export LIBARROW_BINARY=true
+export LIBARROW_MINIMAL=false
+
+# Install with bundled libraries
+R CMD INSTALL .
+```
+
+Or use the helper script:
+
+```bash
+cd r
+make sync-cpp  # Copy C++ source into R package
+make build     # Build the package
+make install   # Install the package
+```
+
+</Steps>
+
+<Tip>
+The `make build` command:
+1. Copies Arrow C++ source into `r/tools/cpp`
+2. Prunes unnecessary components
+3. Runs `R CMD build` to create the source tarball
+</Tip>
+
+## Development Workflow
+
+### Quick Development Cycle
+
+For rapid iteration during development:
+
+<Steps>
+
+### Load package in development mode
+
+```r
+# From arrow/r directory
+devtools::load_all()
+```
+
+### Make changes to R code
+
+Edit files in `r/R/`
+
+### Reload
+
+```r
+devtools::load_all()
+```
+
+### Run tests
+
+```r
+devtools::test()
+```
+
+</Steps>
+
+### Rebuilding After C++ Changes
+
+If you modify Arrow C++ code:
+
+<Steps>
+
+### Rebuild Arrow C++
+
+```bash
+# From arrow/cpp directory
+cmake --build build --target install
+```
+
+### Reinstall R package
+
+```r
+# If using system libraries, just reinstall
+devtools::install("r")
+
+# If bundling, resync C++ first
+```
+
+```bash
+cd r
+make sync-cpp
+make install
+```
+
+</Steps>
+
+## Build Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|----------|
+| `LIBARROW_BINARY` | Use pre-built Arrow C++ binaries | `true` |
+| `LIBARROW_MINIMAL` | Build with minimal features | `false` |
+| `LIBARROW_BUILD` | Build Arrow C++ from source if needed | `true` |
+| `ARROW_HOME` | Path to Arrow C++ installation | - |
+| `ARROW_R_DEV` | Enable development mode | `false` |
+| `NOT_CRAN` | Bypass CRAN-specific restrictions | `false` |
+
+### Feature Flags
+
+Control which Arrow features are enabled:
+
+```bash
+# Enable specific features
+export LIBARROW_MINIMAL=false
+export ARROW_S3=ON
+export ARROW_GCS=ON
+export ARROW_PARQUET=ON
+export ARROW_DATASET=ON
+
+R CMD INSTALL r/
+```
+
+## Testing
+
+### Run All Tests
+
+```r
+devtools::test()
+```
+
+### Run Specific Test File
+
+```r
+devtools::test(filter = "parquet")
+```
+
+### Run Tests with Coverage
+
+```r
+covr::package_coverage()
+```
+
+### Integration Tests
+
+```bash
+# Set test data location
+export ARROW_TEST_DATA=/path/to/arrow/testing/data
+
+# Run integration tests
+cd r/tests
+Rscript testthat.R
+```
+
+## Platform-Specific Notes
+
+### macOS Architecture
+
+<Warning>
+**Critical**: On Apple Silicon (M1/M2/M3) Macs, use ARM-compiled R. On Intel Macs, use x86-compiled R. Mixing architectures will cause segfaults and crashes.
+</Warning>
+
+Check your R architecture:
+
+```r
+SessionInfo()$platform
+# Should show "aarch64" for ARM or "x86_64" for Intel
+```
+
+### Linux: Building from Source
+
+On Linux, CRAN doesn't provide binaries, so the package often builds from source:
+
+```bash
+# Install build dependencies
+sudo apt-get install -y \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    libxml2-dev
+
+# Install with auto-download of Arrow C++
+install.packages("arrow")
+```
+
+The package will automatically download and build Arrow C++ if needed.
+
+### Windows: CRAN vs. Development Builds
+
+CRAN binaries on Windows include pre-built Arrow C++. For development:
+
+```r
+# Install build tools
+install.packages("pkgbuild")
+pkgbuild::check_build_tools()
+
+# Build with RTools
+devtools::install("r")
+```
+
+## CRAN Release Process
+
+For maintainers preparing a CRAN release:
+
+<Steps>
+
+### Create CRAN release branch
+
+```bash
+git checkout -b maint-X.Y.Z-r apache/maint-X.Y.Z
+git push upstream maint-X.Y.Z-r
+```
+
+### Build release tarball
+
+```bash
+cd r
+make build
+```
+
+This creates `arrow_X.Y.Z.tar.gz`.
+
+### Download checksums for binaries
+
+```bash
+Rscript tools/update-checksums.R <version>
+git add -f tools/checksums/
+git commit -m "[CRAN] Add checksums"
+```
+
+### Test on multiple platforms
+
+```bash
+# Upload to win-builder
+# https://win-builder.r-project.org/upload.aspx
+
+# Upload to macOS builder  
+# https://mac.r-project.org/macbuilder/submit.html
+```
+
+### Submit to CRAN
+
+Upload to [CRAN submission page](https://xmpalantir.wu.ac.at/cransubmit/).
+
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+
+<Accordion title="Installation fails with C++20 errors">
+**Error**: Compiler doesn't support C++20
+
+**Solution**:
+- **Windows**: Upgrade to R 4.3 or later
+- **Linux**: Install gcc 12+ or clang 14+
+- **macOS**: Update Xcode Command Line Tools
+</Accordion>
+
+<Accordion title="Cannot find Arrow C++ libraries">
+**Error**: `Arrow C++ library not found`
+
+**Solution**: Set `ARROW_HOME`:
+```bash
+export ARROW_HOME=/path/to/arrow/installation
+export PKG_CONFIG_PATH=$ARROW_HOME/lib/pkgconfig
+```
+</Accordion>
+
+<Accordion title="Segfaults on macOS">
+**Error**: Immediate crash or segfault
+
+**Solution**: Ensure R architecture matches Mac architecture:
+```r
+# Check architecture
+SessionInfo()$platform
+
+# On ARM Mac, should be "aarch64-apple-darwin"
+# On Intel Mac, should be "x86_64-apple-darwin"
+```
+
+Reinstall R if architecture doesn't match.
+</Accordion>
+
+<Accordion title="Tests fail with 'Cannot find test data'">
+**Error**: Test data not found
+
+**Solution**: Set test data paths:
+```bash
+export ARROW_TEST_DATA=/path/to/arrow/testing/data
+export PARQUET_TEST_DATA=/path/to/arrow/cpp/submodules/parquet-testing/data
+```
+</Accordion>
+
+<Accordion title="S3/GCS support not available">
+**Issue**: Cloud filesystem features missing
+
+**Solution**: CRAN builds include S3 but not GCS. For GCS, build from source:
+```bash
+export LIBARROW_MINIMAL=false
+export ARROW_GCS=ON
+R CMD INSTALL r/
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Cleaning Build Artifacts
+
+```bash
+# Clean R package build artifacts
+cd r
+make clean
+
+# Remove bundled C++ source
+rm -rf tools/cpp
+
+# Clean installed package
+R -e 'remove.packages("arrow")'
+```
+
+## Development Resources
+
+<CardGroup cols={2}>
+
+<Card title="Developer Setup" icon="wrench" href="https://arrow.apache.org/docs/r/articles/developers/setup.html">
+  Detailed environment setup guide
+</Card>
+
+<Card title="Workflow Tasks" icon="list-check" href="https://arrow.apache.org/docs/r/articles/developers/workflow.html">
+  Common development workflows
+</Card>
+
+<Card title="R Package Docs" icon="book" href="https://arrow.apache.org/docs/r/">
+  R package documentation
+</Card>
+
+<Card title="CRAN Packaging" icon="box">
+  Release preparation checklist
+</Card>
+
+</CardGroup>
+
+## Next Steps
+
+- Review the [R package development guide](https://arrow.apache.org/docs/r/articles/developers/setup.html)
+- Check out the [contribution guide](/developers/contributing)
+- Join the [Arrow mailing lists](https://arrow.apache.org/community/) for questions

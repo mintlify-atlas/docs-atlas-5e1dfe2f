@@ -1,0 +1,123 @@
+---
+title: Apache Arrow
+description: Universal columnar format and multi-language toolbox for fast data interchange and in-memory analytics
+---
+
+# Apache Arrow
+
+Apache Arrow is a universal columnar format and multi-language toolbox for fast data interchange and in-memory analytics. It contains a set of technologies that enable data systems to efficiently store, process, and move data.
+
+<Note>
+Arrow is an [Apache Software Foundation](https://www.apache.org) project that provides a standardized, language-agnostic columnar memory format for flat and hierarchical data.
+</Note>
+
+## Major Components
+
+The Apache Arrow project consists of several key technologies:
+
+<CardGroup cols={2}>
+  <Card title="Arrow Columnar Format" icon="table" href="/key-concepts">
+    A standard and efficient in-memory representation of various datatypes, plain or nested
+  </Card>
+  
+  <Card title="Arrow IPC Format" icon="arrows-left-right">
+    Efficient serialization for communication between processes and heterogeneous environments
+  </Card>
+  
+  <Card title="Arrow Flight RPC" icon="plane">
+    High-performance protocol for remote services exchanging Arrow data
+  </Card>
+  
+  <Card title="ADBC" icon="database">
+    Arrow-powered API, drivers, and libraries for database and query engine access
+  </Card>
+</CardGroup>
+
+## What's in the Arrow Libraries?
+
+The reference Arrow libraries contain many distinct software components:
+
+<CardGroup cols={2}>
+  <Card title="Columnar Containers" icon="grid">
+    Vector and table-like containers supporting flat or nested types, similar to data frames
+  </Card>
+  
+  <Card title="Fast Metadata Layer" icon="bolt">
+    Language-agnostic metadata messaging using Google's FlatBuffers library
+  </Card>
+  
+  <Card title="Zero-Copy Memory" icon="memory">
+    Reference-counted off-heap buffer management for zero-copy memory sharing and memory-mapped files
+  </Card>
+  
+  <Card title="File System I/O" icon="folder-open">
+    IO interfaces to local and remote filesystems
+  </Card>
+  
+  <Card title="Wire Formats" icon="network-wired">
+    Self-describing binary formats for RPC and interprocess communication
+  </Card>
+  
+  <Card title="File Format Support" icon="file">
+    Readers and writers for Parquet, CSV, and other widely-used formats
+  </Card>
+</CardGroup>
+
+## Multi-Language Support
+
+Arrow provides official implementations in 13+ programming languages:
+
+- **C++** - High-performance core implementation
+- **Python** - PyArrow for data science and analytics
+- **Java** - Enterprise-grade Java libraries
+- **JavaScript/TypeScript** - Browser and Node.js support
+- **Go, Rust, C#** - Modern language implementations
+- **R, Julia, MATLAB** - Scientific computing languages
+- **Ruby, Swift** - Additional language bindings
+
+<Info>
+All Arrow implementations can exchange data with zero serialization overhead, enabling true interoperability across the entire data ecosystem.
+</Info>
+
+## Key Features
+
+The Arrow columnar format is optimized for modern hardware:
+
+- **Data adjacency** for sequential access and efficient scans
+- **O(1) random access** to individual elements (constant-time)
+- **SIMD-friendly** layout for vectorized operations
+- **Relocatable** design allowing zero-copy access in shared memory
+- **64-byte alignment** matching SIMD register widths (Intel AVX-512)
+
+## Getting Started
+
+<CardGroup cols={2}>
+  <Card title="Why Use Arrow?" icon="question" href="/why-arrow">
+    Learn about the benefits and use cases for Apache Arrow
+  </Card>
+  
+  <Card title="Key Concepts" icon="book" href="/key-concepts">
+    Understand Arrow's terminology and core concepts
+  </Card>
+  
+  <Card title="Specifications" icon="file-lines" href="https://arrow.apache.org/docs/format/Columnar.html">
+    Read the complete format specification
+  </Card>
+  
+  <Card title="Implementations" icon="code" href="https://arrow.apache.org/docs/status.html">
+    Browse language-specific documentation
+  </Card>
+</CardGroup>
+
+## Community
+
+Arrow is actively developed by a global community of contributors:
+
+- Join the mailing list: [dev-subscribe@arrow.apache.org](mailto:dev-subscribe@arrow.apache.org)
+- Follow development on [GitHub](https://github.com/apache/arrow/issues)
+- Contribute to one of the reference implementations
+- Learn more at [arrow.apache.org](https://arrow.apache.org)
+
+<Tip>
+The Apache Arrow Cookbook provides practical recipes for using Arrow in C++, Java, Python, and R. Visit the [Arrow Cookbook](https://arrow.apache.org/cookbook/) to get started.
+</Tip>

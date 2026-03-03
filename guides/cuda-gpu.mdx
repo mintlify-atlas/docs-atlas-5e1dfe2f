@@ -1,0 +1,411 @@
+---
+title: CUDA and GPU Support
+description: Accelerate Arrow operations with GPU memory management and CUDA integration
+---
+
+Apache Arrow provides CUDA integration for GPU-accelerated data processing. The GPU support enables zero-copy data sharing between CPU and GPU, efficient memory management on CUDA devices, and integration with GPU-based compute libraries.
+
+## Overview
+
+Arrow's CUDA support provides:
+
+- **GPU memory management**: Allocate and manage buffers on CUDA devices
+- **Zero-copy transfers**: Share data between CPU and GPU without copying
+- **IPC support**: Share GPU buffers between processes using CUDA IPC
+- **Device abstraction**: Unified API for CPU and GPU memory
+- **Multi-GPU support**: Work with multiple CUDA devices
+
+## Getting Started
+
+### Device Management
+
+Access CUDA devices through the `CudaDeviceManager`:
+
+```cpp
+#include "arrow/gpu/cuda_api.h"
+
+// Get the device manager singleton
+arrow::Result<arrow::cuda::CudaDeviceManager*> result = 
+    arrow::cuda::CudaDeviceManager::Instance();
+if (!result.ok()) {
+    std::cerr << "CUDA not available: " << result.status() << std::endl;
+    return;
+}
+auto manager = result.ValueOrDie();
+
+// Get number of available GPUs
+int num_devices = manager->num_devices();
+std::cout << "Found " << num_devices << " CUDA device(s)" << std::endl;
+
+// Get a specific device (device 0)
+auto device_result = manager->GetDevice(0);
+if (!device_result.ok()) {
+    std::cerr << "Failed to get device: " << device_result.status();
+    return;
+}
+std::shared_ptr<arrow::cuda::CudaDevice> device = 
+    device_result.ValueOrDie();
+
+std::cout << "Device: " << device->device_name() << std::endl;
+std::cout << "Total memory: " << device->total_memory() << " bytes" << std::endl;
+```
+
+### CUDA Context
+
+A `CudaContext` manages the CUDA driver context for a device:
+
+```cpp
+// Get context for device
+auto context_result = device->GetContext();
+std::shared_ptr<arrow::cuda::CudaContext> context = 
+    context_result.ValueOrDie();
+
+// Get device number
+int device_num = context->device_number();
+
+// Synchronize all operations on the device
+context->Synchronize();
+
+// Get memory usage
+int64_t bytes_allocated = context->bytes_allocated();
+```
+
+## GPU Memory Management
+
+### Allocating GPU Memory
+
+Allocate memory on a CUDA device:
+
+```cpp
+// Allocate 1 MB on GPU
+int64_t size = 1024 * 1024;
+auto buffer_result = context->Allocate(size);
+if (!buffer_result.ok()) {
+    std::cerr << "Allocation failed: " << buffer_result.status();
+    return;
+}
+std::unique_ptr<arrow::cuda::CudaBuffer> gpu_buffer = 
+    buffer_result.ValueOrDie();
+
+std::cout << "Allocated " << gpu_buffer->size() 
+          << " bytes on GPU" << std::endl;
+```
+
+### Copying Data Between CPU and GPU
+
+```cpp
+// Create CPU buffer with data
+std::vector<int32_t> cpu_data(1000, 42);
+auto cpu_buffer = arrow::Buffer::Wrap(cpu_data);
+
+// Allocate GPU buffer
+auto gpu_buffer = context->Allocate(cpu_buffer->size()).ValueOrDie();
+
+// Copy from CPU to GPU
+arrow::Status status = gpu_buffer->CopyFromHost(
+    0, cpu_buffer->data(), cpu_buffer->size());
+if (!status.ok()) {
+    std::cerr << "Copy to GPU failed: " << status;
+}
+
+// Allocate CPU buffer for results
+std::vector<int32_t> result_data(1000);
+
+// Copy from GPU back to CPU
+status = gpu_buffer->CopyToHost(
+    0, gpu_buffer->size(), result_data.data());
+if (!status.ok()) {
+    std::cerr << "Copy from GPU failed: " << status;
+}
+```
+
+### Viewing GPU Memory
+
+Create non-owning views of existing GPU memory:
+
+```cpp
+// Existing GPU allocation (e.g., from another library)
+uint8_t* device_ptr = /* pointer to GPU memory */;
+int64_t size = /* size of allocation */;
+
+// Create Arrow buffer view
+auto view_result = context->View(device_ptr, size);
+std::shared_ptr<arrow::cuda::CudaBuffer> buffer_view = 
+    view_result.ValueOrDie();
+
+// Use view without taking ownership
+// Original owner is responsible for freeing memory
+```
+
+## Host Memory with GPU Access
+
+Allocate pinned CPU memory accessible by GPU:
+
+```cpp
+// Allocate pinned host memory
+int64_t size = 1024 * 1024;
+auto host_buffer_result = device->AllocateHostBuffer(size);
+std::shared_ptr<arrow::cuda::CudaHostBuffer> host_buffer = 
+    host_buffer_result.ValueOrDie();
+
+// Get device address for GPU access
+auto device_addr_result = host_buffer->GetDeviceAddress(context);
+uintptr_t device_addr = device_addr_result.ValueOrDie();
+
+// GPU can access this address directly
+// Enables zero-copy transfers in some cases
+```
+
+## Memory Manager Integration
+
+Use Arrow's unified memory manager API:
+
+```cpp
+// Get memory manager for device
+std::shared_ptr<arrow::MemoryManager> mm = 
+    device->default_memory_manager();
+
+// Check if it's a CUDA memory manager
+if (arrow::cuda::IsCudaMemoryManager(*mm)) {
+    auto cuda_mm = arrow::cuda::AsCudaMemoryManager(mm).ValueOrDie();
+    auto cuda_device = cuda_mm->cuda_device();
+    std::cout << "Using CUDA device: " 
+              << cuda_device->device_number() << std::endl;
+}
+
+// Allocate through memory manager
+auto buffer_result = mm->AllocateBuffer(1024 * 1024);
+std::unique_ptr<arrow::Buffer> buffer = buffer_result.ValueOrDie();
+```
+
+## Multi-GPU Operations
+
+### Copying Between GPUs
+
+```cpp
+// Get two different devices
+auto device0 = manager->GetDevice(0).ValueOrDie();
+auto device1 = manager->GetDevice(1).ValueOrDie();
+
+auto context0 = device0->GetContext().ValueOrDie();
+auto context1 = device1->GetContext().ValueOrDie();
+
+// Allocate on first GPU
+auto buffer0 = context0->Allocate(1024).ValueOrDie();
+
+// Allocate on second GPU
+auto buffer1 = context1->Allocate(1024).ValueOrDie();
+
+// Copy from GPU 0 to GPU 1
+arrow::Status status = buffer1->CopyFromAnotherDevice(
+    context0, 0, buffer0->address(), buffer0->size());
+```
+
+## CUDA IPC (Inter-Process Communication)
+
+Share GPU buffers between processes:
+
+```cpp
+// Process 1: Export buffer for sharing
+auto gpu_buffer = context->Allocate(1024 * 1024).ValueOrDie();
+
+// Get IPC handle
+auto handle_result = gpu_buffer->ExportForIpc();
+std::shared_ptr<arrow::cuda::CudaIpcMemHandle> ipc_handle = 
+    handle_result.ValueOrDie();
+
+// Serialize handle to send to other process
+auto serialized = ipc_handle->Serialize().ValueOrDie();
+
+// Send serialized buffer to other process...
+// (e.g., via sockets, shared memory, etc.)
+```
+
+```cpp
+// Process 2: Open shared buffer
+// Receive serialized handle from other process...
+const void* handle_data = /* received data */;
+
+auto handle_result = 
+    arrow::cuda::CudaIpcMemHandle::FromBuffer(handle_data);
+auto ipc_handle = handle_result.ValueOrDie();
+
+// Open the shared buffer
+auto buffer_result = context->OpenIpcBuffer(*ipc_handle);
+std::shared_ptr<arrow::cuda::CudaBuffer> shared_buffer = 
+    buffer_result.ValueOrDie();
+
+// Access shared data
+// ...
+
+// Close when done
+context->CloseIpcBuffer(shared_buffer.get());
+```
+
+## Streams and Events
+
+### CUDA Streams
+
+```cpp
+// Create a CUDA stream
+auto stream_result = device->MakeStream();
+std::shared_ptr<arrow::Device::Stream> stream = 
+    stream_result.ValueOrDie();
+
+// Synchronize stream
+stream->Synchronize();
+
+// Wrap existing stream
+CUstream cu_stream = /* existing CUDA stream */;
+auto wrapped_stream = device->WrapStream(
+    &cu_stream, 
+    /*release_fn=*/nullptr  // Don't free on destroy
+).ValueOrDie();
+```
+
+### CUDA Events
+
+```cpp
+// Get CUDA memory manager
+auto cuda_mm = arrow::cuda::AsCudaMemoryManager(
+    device->default_memory_manager()).ValueOrDie();
+
+// Create synchronization event
+auto event_result = cuda_mm->MakeDeviceSyncEvent();
+std::shared_ptr<arrow::Device::SyncEvent> event = 
+    event_result.ValueOrDie();
+
+// Record event on stream
+event->Record(*stream);
+
+// Wait for event
+event->Wait();
+
+// Wait on different stream
+stream2->WaitEvent(*event);
+```
+
+## Buffer I/O
+
+Read and write GPU buffers using file-like interfaces:
+
+```cpp
+// Create reader for GPU buffer
+auto reader_result = mm->GetBufferReader(gpu_buffer);
+std::shared_ptr<arrow::io::RandomAccessFile> reader = 
+    reader_result.ValueOrDie();
+
+// Read data (copies to host)
+std::vector<uint8_t> host_data(100);
+auto read_result = reader->Read(100, host_data.data());
+
+// Create writer for GPU buffer
+auto writer_result = mm->GetBufferWriter(gpu_buffer);
+std::shared_ptr<arrow::io::OutputStream> writer = 
+    writer_result.ValueOrDie();
+
+// Write data (copies from host)
+std::vector<uint8_t> data_to_write = {1, 2, 3, 4, 5};
+writer->Write(data_to_write.data(), data_to_write.size());
+```
+
+## Performance Best Practices
+
+### Minimize CPU-GPU Transfers
+
+```cpp
+// BAD: Multiple small transfers
+for (int i = 0; i < 1000; ++i) {
+    gpu_buffer->CopyFromHost(i * sizeof(int), &data[i], sizeof(int));
+}
+
+// GOOD: Single large transfer
+gpu_buffer->CopyFromHost(0, data.data(), data.size() * sizeof(int));
+```
+
+### Use Pinned Memory for Frequent Transfers
+
+```cpp
+// Allocate pinned memory once
+auto host_buffer = device->AllocateHostBuffer(size).ValueOrDie();
+
+// Reuse for multiple transfers (faster than pageable memory)
+for (const auto& batch : batches) {
+    // Copy to pinned memory
+    std::memcpy(host_buffer->mutable_data(), 
+                batch.data(), batch.size());
+    
+    // Transfer to GPU (faster with pinned memory)
+    gpu_buffer->CopyFromHost(0, host_buffer->data(), size);
+}
+```
+
+### Asynchronous Operations
+
+```cpp
+// Use streams for overlapping operations
+auto stream1 = device->MakeStream().ValueOrDie();
+auto stream2 = device->MakeStream().ValueOrDie();
+
+// Launch operations on different streams
+// (can execute concurrently)
+LaunchKernel1(stream1);
+LaunchKernel2(stream2);
+
+stream1->Synchronize();
+stream2->Synchronize();
+```
+
+## When to Use GPU Support
+
+GPU support is beneficial for:
+
+- **Large-scale compute**: Operations on hundreds of MBs to GBs of data
+- **Parallel algorithms**: Data-parallel operations that map well to GPU architecture
+- **Integration with GPU libraries**: Using CUDA-based ML/DL frameworks
+- **Minimizing copies**: Zero-copy sharing with GPU compute engines
+
+CPU may be better for:
+
+- **Small datasets**: GPU transfer overhead dominates
+- **Sequential operations**: Limited parallelism opportunity
+- **Complex control flow**: GPUs excel at data-parallel, not task-parallel workloads
+
+<Warning>
+  **Prerequisites**
+  
+  - NVIDIA GPU with CUDA support (compute capability 3.0+)
+  - CUDA toolkit installed (version 9.0 or later)
+  - Arrow built with `ARROW_CUDA=ON` CMake option
+  - Appropriate GPU drivers installed
+  
+  **Limitations**
+  
+  - CUDA IPC only works between processes on the same physical machine
+  - IPC handles cannot be serialized across network
+  - GPU memory is limited; monitor allocation carefully
+  - Not all Arrow operations have GPU implementations
+</Warning>
+
+## Error Handling
+
+All CUDA operations return `arrow::Result` or `arrow::Status`:
+
+```cpp
+auto result = context->Allocate(size);
+if (!result.ok()) {
+    std::cerr << "Allocation failed: " << result.status().ToString();
+    // Handle error...
+    return;
+}
+auto buffer = result.ValueOrDie();
+
+// Or use ARROW_ASSIGN_OR_RAISE macro
+ARROW_ASSIGN_OR_RAISE(auto buffer, context->Allocate(size));
+```
+
+## Related Resources
+
+- [Memory Management](/guides/memory)
+- [Zero-Copy Data Sharing](/guides/ipc)
+- [Device Abstraction API](/api/cpp/device)

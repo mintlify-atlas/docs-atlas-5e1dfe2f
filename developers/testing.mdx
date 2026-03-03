@@ -1,0 +1,314 @@
+---
+title: Testing Guide
+description: Comprehensive guide to running and writing tests for Apache Arrow across all language implementations
+---
+
+This guide covers testing practices for Apache Arrow, including how to run tests, write new tests, and follow best practices for each language implementation.
+
+## Running Tests
+
+<Tabs>
+  <Tab title="PyArrow">
+    Apache Arrow's Python implementation uses [pytest](https://docs.pytest.org/) for unit testing.
+
+    ### Test Structure
+
+    Tests in PyArrow follow the pytest convention for "Tests as part of application code":
+
+    ```
+    pyarrow/
+        __init__.py
+        csv.py
+        dataset.py
+        ...
+        tests/
+            __init__.py
+            test_csv.py
+            test_dataset.py
+            ...
+    ```
+
+    Tests for Parquet are located in a separate folder: `pyarrow/tests/parquet/`.
+
+    ### Running PyArrow Tests
+
+    <Steps>
+      <Step title="Run a specific test">
+        From the `arrow/python` directory:
+
+        ```bash
+        pytest pyarrow/tests/test_file.py -k test_your_unit_test
+        ```
+      </Step>
+
+      <Step title="Run all tests in a file">
+        ```bash
+        pytest pyarrow/tests/test_file.py
+        ```
+      </Step>
+
+      <Step title="Run all tests">
+        ```bash
+        pytest pyarrow
+        ```
+      </Step>
+    </Steps>
+
+    <Note>
+      You can also run tests with `python -m pytest [...]` which adds the current directory to `sys.path` and can help if `pytest [...]` results in an ImportError.
+    </Note>
+
+    ### Test Groups
+
+    Many tests are grouped using pytest marks. Some groups are disabled by default:
+
+    - **Enable a group**: `--$GROUP_NAME` (e.g., `--parquet`)
+    - **Disable a group**: `--disable-$GROUP_NAME` (e.g., `--disable-parquet`)
+    - **Run only a group**: `--only-$GROUP_NAME` (e.g., `--only-parquet`)
+
+    Available test groups:
+
+    | Group | Description |
+    |-------|-------------|
+    | `dataset` | Apache Arrow Dataset tests |
+    | `flight` | Flight RPC tests |
+    | `gandiva` | Gandiva expression compiler tests (uses LLVM) |
+    | `hdfs` | Tests using libhdfs for Hadoop filesystem |
+    | `hypothesis` | Tests using hypothesis for random test cases (use `--enable-hypothesis`) |
+    | `large_memory` | Tests requiring large amounts of system RAM |
+    | `orc` | Apache ORC tests |
+    | `parquet` | Apache Parquet tests |
+
+    ### Troubleshooting
+
+    If tests start failing, try recompiling PyArrow or Arrow C++:
+
+    ```bash
+    # Rebuild from source
+    cd arrow/python
+    python setup.py build_ext --inplace
+    ```
+
+    ### Test Fixtures
+
+    PyArrow test files contain helper functions and fixtures. Common examples:
+
+    - `_alltypes_example` in `test_pandas`: Supplies a dataframe with 100 rows for all data types
+    - `_check_pandas_roundtrip` in `test_pandas`: Asserts roundtrip conversion from Pandas through Arrow structures
+    - `large_buffer` fixture: Supplies a PyArrow buffer of fixed size
+
+    Look through test files before adding tests to see if existing fixtures can help.
+  </Tab>
+
+  <Tab title="R Package">
+    Apache Arrow's R implementation uses [testthat](https://testthat.r-lib.org/) for unit testing, specifically the 3rd edition.
+
+    ### Test Structure
+
+    Standard testthat folder structure:
+
+    ```r
+    tests/
+     ├── testthat/      # test files live here
+     └── testthat.R     # runs tests when R CMD check runs
+    ```
+
+    Most files in the `R/` folder have a corresponding test file in `tests/testthat`.
+
+    ### Running R Tests
+
+    <Steps>
+      <Step title="Run all tests in the package">
+        In the R console:
+
+        ```r
+        devtools::test()
+        ```
+
+        Or in the shell:
+
+        ```bash
+        make test
+        ```
+      </Step>
+
+      <Step title="Run tests in the active file">
+        ```r
+        devtools::test_active_file()
+        ```
+      </Step>
+    </Steps>
+
+    All tests also run as part of continuous integration (CI) pipelines.
+
+    See the [Arrow R Developer guide](https://arrow.apache.org/docs/r/articles/developing.html#running-tests) for additional details.
+
+    ### Testing Helpers
+
+    Arrow R package provides specific utility functions:
+
+    **Expectations** (start with `expect_`):
+    - `expect_…_roundtrip()`: Converts input to another format and back, confirming values match
+
+    ```r
+    x <- c(1, 2, 3, NA_real_)
+    expect_altrep_roundtrip(x, min, na.rm = TRUE)
+    ```
+
+    **Skip Functions** (skip tests under certain conditions):
+    - `skip_if_r_version()`: Skip if R version doesn't meet requirements
+    - `skip_if_not_available()`: Skip if Arrow feature not built
+    - `skip_if_offline()`: Skip tests requiring internet connection
+    - `skip_on_os()`: Skip on specific operating systems
+
+    <Warning>
+      Once a `skip_()` condition is met, no other code in that `test_that()` block executes. If the skip is outside a `test_that()` block, it skips the rest of the file.
+    </Warning>
+  </Tab>
+
+  <Tab title="C++">
+    Apache Arrow's C++ implementation uses [Google Test](https://github.com/google/googletest) for unit testing.
+
+    ### Building Tests
+
+    Enable test building with CMake:
+
+    ```bash
+    cmake .. -DARROW_BUILD_TESTS=ON
+    cd build
+    make
+    ```
+
+    ### Running C++ Tests
+
+    <Steps>
+      <Step title="Run a specific test executable">
+        ```bash
+        ./build/release/arrow-array-test
+        ```
+      </Step>
+
+      <Step title="Run all tests with ctest">
+        ```bash
+        ctest -j16 --output-on-failure
+        ```
+
+        The `-j16` option runs up to 16 tests in parallel.
+      </Step>
+
+      <Step title="Run only unit tests">
+        ```bash
+        ctest -L unittest
+        ```
+      </Step>
+    </Steps>
+
+    <Note>
+      For meaningful test execution, ensure you're using a build with debug symbols. Release builds with optimizations enabled may behave differently.
+    </Note>
+
+    ### Parquet Tests
+
+    To run Parquet-specific tests:
+
+    ```bash
+    # Run only Parquet tests
+    ctest -L parquet
+    ```
+
+    Parquet tests require the `PARQUET_TEST_DATA` environment variable:
+
+    ```bash
+    git submodule update --init
+    export PARQUET_TEST_DATA=$ARROW_ROOT/cpp/submodules/parquet-testing/data
+    ```
+
+    Where `$ARROW_ROOT` is the absolute path to the Arrow codebase.
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+### When to Add Tests
+
+In general, any change to source code needs accompanying unit tests:
+
+- **Add functionality** → Add unit tests
+- **Modify functionality** → Update unit tests
+- **Solve a bug** → Add unit test before fixing (helps prove the bug and its fix)
+- **Performance improvements** → Reflect in benchmarks (which are also tests)
+- **Refactoring** → May not need test changes if fully covered by existing tests
+
+<Tip>
+  **Rule of thumb**: If the new functionality is a user-facing or API change, you will almost certainly need to change tests. If no tests need changing, it might mean the tests aren't right!
+</Tip>
+
+### Writing Quality Tests
+
+<AccordionGroup>
+  <Accordion title="Keep tests focused">
+    Each test should verify a single behavior or feature. Avoid overloading tests with multiple assertions for unrelated functionality.
+  </Accordion>
+
+  <Accordion title="Use descriptive names">
+    Test names should clearly describe what they're testing:
+
+    ```python
+    # Good
+    def test_timestamp_with_timezone_prints_correctly():
+        ...
+
+    # Bad
+    def test_timestamp():
+        ...
+    ```
+  </Accordion>
+
+  <Accordion title="Minimize dependencies">
+    Tests should have as few external dependencies as possible. If testing file reading, provide the smallest possible example file or code to create one.
+  </Accordion>
+
+  <Accordion title="Make tests reproducible">
+    Tests should produce consistent results across different environments and runs. Avoid depending on timing, network conditions, or external state.
+  </Accordion>
+</AccordionGroup>
+
+## Continuous Integration
+
+All tests run automatically in CI pipelines when you submit a pull request. The CI system tests:
+
+- Multiple platforms (Linux, macOS, Windows)
+- Different compiler versions
+- Various build configurations
+- Address Sanitizer (ASan) and Undefined Behavior Sanitizer (UBSan)
+
+Your PR must pass all CI checks before it can be merged.
+
+### Running CI Checks Locally
+
+Before submitting a PR, you can run some CI checks locally:
+
+```bash
+# Run C++ linting and style checks
+pre-commit run --show-diff-on-failure --color=always --all-files cpp
+
+# Run Python linting and style checks
+pre-commit run --show-diff-on-failure --color=always --all-files python
+```
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="pytest Documentation" icon="flask" href="https://docs.pytest.org/">
+    Complete guide to pytest framework
+  </Card>
+  <Card title="testthat Documentation" icon="vial" href="https://testthat.r-lib.org/">
+    R package testing with testthat
+  </Card>
+  <Card title="Google Test Primer" icon="check" href="https://google.github.io/googletest/primer.html">
+    Introduction to Google Test framework
+  </Card>
+  <Card title="Arrow CI Overview" icon="robot" href="/developers/continuous-integration">
+    Learn about Arrow's CI infrastructure
+  </Card>
+</CardGroup>

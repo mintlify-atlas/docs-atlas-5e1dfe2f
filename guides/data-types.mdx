@@ -1,0 +1,557 @@
+---
+title: Working with Data Types
+description: Understanding and using Apache Arrow's rich type system
+---
+
+Apache Arrow provides a comprehensive type system that supports primitive types, nested types, temporal types, and custom extension types.
+
+## Primitive Types
+
+Arrow supports all common primitive data types with explicit bit widths.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+
+    # Numeric types
+    int8_type = pa.int8()
+    int16_type = pa.int16()
+    int32_type = pa.int32()
+    int64_type = pa.int64()
+    
+    uint8_type = pa.uint8()
+    uint16_type = pa.uint16()
+    uint32_type = pa.uint32()
+    uint64_type = pa.uint64()
+
+    # Floating point
+    float16_type = pa.float16()  # Half precision
+    float32_type = pa.float32()
+    float64_type = pa.float64()
+
+    # Boolean
+    bool_type = pa.bool_()
+
+    # Create arrays with explicit types
+    int_array = pa.array([1, 2, 3, 4], type=pa.int32())
+    float_array = pa.array([1.5, 2.5, 3.5], type=pa.float64())
+    
+    # Type checking
+    print(f"Type: {int_array.type}")
+    print(f"Is integer: {pa.types.is_integer(int_array.type)}")
+    print(f"Bit width: {int_array.type.bit_width}")
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/type.h>
+
+    void PrimitiveTypes() {
+      // Numeric types
+      auto int8_type = arrow::int8();
+      auto int16_type = arrow::int16();
+      auto int32_type = arrow::int32();
+      auto int64_type = arrow::int64();
+      
+      auto uint8_type = arrow::uint8();
+      auto uint16_type = arrow::uint16();
+      auto uint32_type = arrow::uint32();
+      auto uint64_type = arrow::uint64();
+
+      // Floating point
+      auto float16_type = arrow::float16();
+      auto float32_type = arrow::float32();
+      auto float64_type = arrow::float64();
+
+      // Boolean
+      auto bool_type = arrow::boolean();
+
+      // Type checking
+      if (arrow::is_integer(int32_type->id())) {
+        std::cout << "Is integer type" << std::endl;
+      }
+      
+      std::cout << "Bit width: " 
+                << std::static_pointer_cast<arrow::Int32Type>(
+                    int32_type)->bit_width() << std::endl;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## String and Binary Types
+
+Arrow distinguishes between binary data and UTF-8 encoded strings.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+
+    # UTF-8 strings (variable length)
+    string_array = pa.array(['hello', 'world', 'arrow'], type=pa.string())
+    # pa.utf8() is an alias for pa.string()
+
+    # Binary data (variable length)
+    binary_array = pa.array([b'\x00\x01', b'\xff\xfe'], type=pa.binary())
+
+    # Large variants (for >2GB data)
+    large_string = pa.large_string()  # Uses 64-bit offsets
+    large_binary = pa.large_binary()
+
+    # Fixed-size binary
+    fixed_binary = pa.binary(5)  # Each value is exactly 5 bytes
+    fixed_array = pa.array([b'12345', b'abcde'], type=fixed_binary)
+
+    # String/Binary views (new, more efficient)
+    string_view = pa.string_view()
+    binary_view = pa.binary_view()
+    
+    print(f"String type: {string_array.type}")
+    print(f"Is string: {pa.types.is_string(string_array.type)}")
+    print(f"Is binary: {pa.types.is_binary(binary_array.type)}")
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/array/builder_binary.h>
+
+    void StringAndBinaryTypes() {
+      // UTF-8 strings
+      auto string_type = arrow::utf8();
+      
+      arrow::StringBuilder string_builder;
+      string_builder.Append("hello");
+      string_builder.Append("world");
+      
+      std::shared_ptr<arrow::Array> string_array;
+      ARROW_CHECK_OK(string_builder.Finish(&string_array));
+
+      // Binary data
+      auto binary_type = arrow::binary();
+      
+      arrow::BinaryBuilder binary_builder;
+      binary_builder.Append("\x00\x01", 2);
+      binary_builder.Append("\xff\xfe", 2);
+      
+      std::shared_ptr<arrow::Array> binary_array;
+      ARROW_CHECK_OK(binary_builder.Finish(&binary_array));
+
+      // Large variants (64-bit offsets)
+      auto large_string_type = arrow::large_utf8();
+      auto large_binary_type = arrow::large_binary();
+
+      // Fixed-size binary
+      auto fixed_binary_type = arrow::fixed_size_binary(5);
+      
+      // Type checking
+      if (arrow::is_string(string_type->id())) {
+        std::cout << "Is string type" << std::endl;
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+Arrow's string type always expects UTF-8 encoding. For binary data that may not be valid UTF-8, use the binary type instead.
+</Note>
+
+## Temporal Types
+
+Arrow provides rich support for dates, times, and timestamps with timezone information.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    from datetime import datetime, date, timedelta
+
+    # Date types (32-bit and 64-bit)
+    date32 = pa.date32()  # Days since UNIX epoch
+    date64 = pa.date64()  # Milliseconds since UNIX epoch
+    
+    dates = pa.array([date(2024, 1, 1), date(2024, 12, 31)], 
+                     type=date32)
+
+    # Time types
+    time32_s = pa.time32('s')   # Seconds since midnight
+    time32_ms = pa.time32('ms') # Milliseconds since midnight
+    time64_us = pa.time64('us') # Microseconds since midnight
+    time64_ns = pa.time64('ns') # Nanoseconds since midnight
+
+    # Timestamp with timezone
+    timestamp_s = pa.timestamp('s')  # Seconds
+    timestamp_ms = pa.timestamp('ms')  # Milliseconds
+    timestamp_us = pa.timestamp('us')  # Microseconds
+    timestamp_ns = pa.timestamp('ns')  # Nanoseconds
+    
+    # With timezone
+    timestamp_tz = pa.timestamp('ms', tz='America/New_York')
+    timestamps = pa.array([
+        datetime(2024, 1, 1, 12, 0, 0),
+        datetime(2024, 6, 15, 18, 30, 0)
+    ], type=timestamp_tz)
+
+    # Duration
+    duration_ms = pa.duration('ms')
+    durations = pa.array([
+        timedelta(days=1),
+        timedelta(hours=2, minutes=30)
+    ], type=duration_ms)
+
+    # Month-day-nano interval
+    interval = pa.month_day_nano_interval()
+    
+    print(f"Timestamp type: {timestamps.type}")
+    print(f"Timezone: {timestamps.type.tz}")
+    print(f"Unit: {timestamps.type.unit}")
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/type.h>
+
+    void TemporalTypes() {
+      // Date types
+      auto date32_type = arrow::date32();  // Days since epoch
+      auto date64_type = arrow::date64();  // Milliseconds since epoch
+
+      // Time types
+      auto time32_s = arrow::time32(arrow::TimeUnit::SECOND);
+      auto time32_ms = arrow::time32(arrow::TimeUnit::MILLI);
+      auto time64_us = arrow::time64(arrow::TimeUnit::MICRO);
+      auto time64_ns = arrow::time64(arrow::TimeUnit::NANO);
+
+      // Timestamp without timezone
+      auto timestamp_ms = arrow::timestamp(arrow::TimeUnit::MILLI);
+      
+      // Timestamp with timezone
+      auto timestamp_tz = arrow::timestamp(
+        arrow::TimeUnit::MILLI, 
+        "America/New_York"
+      );
+      
+      // Duration
+      auto duration_ms = arrow::duration(arrow::TimeUnit::MILLI);
+
+      // Access timestamp properties
+      auto ts_type = std::static_pointer_cast<arrow::TimestampType>(
+        timestamp_tz);
+      std::cout << "Unit: " << ts_type->unit() << std::endl;
+      std::cout << "Timezone: " << ts_type->timezone() << std::endl;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+When working with timestamps, always specify the unit and timezone explicitly to avoid ambiguity. Arrow stores timestamps as integers since the UNIX epoch.
+</Warning>
+
+## Decimal Types
+
+Arrow supports high-precision decimal numbers with configurable precision and scale.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    from decimal import Decimal
+
+    # Decimal128 (up to 38 digits)
+    # precision: total number of digits
+    # scale: number of digits after decimal point
+    decimal128 = pa.decimal128(precision=10, scale=2)
+    
+    decimal_array = pa.array([
+        Decimal('123.45'),
+        Decimal('678.90'),
+        Decimal('1000.00')
+    ], type=decimal128)
+
+    # Decimal256 (up to 76 digits)
+    decimal256 = pa.decimal256(precision=38, scale=6)
+    
+    high_precision = pa.array([
+        Decimal('123456789.123456'),
+        Decimal('987654321.654321')
+    ], type=decimal256)
+
+    print(f"Type: {decimal_array.type}")
+    print(f"Precision: {decimal_array.type.precision}")
+    print(f"Scale: {decimal_array.type.scale}")
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/array/builder_decimal.h>
+
+    void DecimalTypes() {
+      // Decimal128 (up to 38 digits)
+      auto decimal128_type = arrow::decimal128(/*precision=*/10, /*scale=*/2);
+      
+      arrow::Decimal128Builder builder(decimal128_type);
+      
+      // Append values
+      ARROW_CHECK_OK(builder.Append(arrow::Decimal128("123.45")));
+      ARROW_CHECK_OK(builder.Append(arrow::Decimal128("678.90")));
+      
+      std::shared_ptr<arrow::Array> array;
+      ARROW_CHECK_OK(builder.Finish(&array));
+
+      // Decimal256 (up to 76 digits)
+      auto decimal256_type = arrow::decimal256(/*precision=*/38, /*scale=*/6);
+      
+      // Access decimal type properties
+      auto dec_type = std::static_pointer_cast<arrow::Decimal128Type>(
+        decimal128_type);
+      std::cout << "Precision: " << dec_type->precision() << std::endl;
+      std::cout << "Scale: " << dec_type->scale() << std::endl;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Nested Types
+
+Arrow supports complex nested data structures including lists, structs, and maps.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+
+    # List type (variable length lists)
+    list_type = pa.list_(pa.int32())
+    list_array = pa.array([
+        [1, 2, 3],
+        [4, 5],
+        [6, 7, 8, 9]
+    ], type=list_type)
+
+    # Large list (64-bit offsets)
+    large_list_type = pa.large_list(pa.string())
+
+    # Fixed size list
+    fixed_list_type = pa.list_(pa.float64(), 3)  # Always 3 elements
+    fixed_array = pa.array([
+        [1.0, 2.0, 3.0],
+        [4.0, 5.0, 6.0]
+    ], type=fixed_list_type)
+
+    # Struct type (like a row with named fields)
+    struct_type = pa.struct([
+        ('name', pa.string()),
+        ('age', pa.int32()),
+        ('score', pa.float64())
+    ])
+    
+    struct_array = pa.array([
+        {'name': 'Alice', 'age': 30, 'score': 95.5},
+        {'name': 'Bob', 'age': 25, 'score': 87.2}
+    ], type=struct_type)
+
+    # Map type (key-value pairs)
+    map_type = pa.map_(pa.string(), pa.int32())
+    map_array = pa.array([
+        [('a', 1), ('b', 2)],
+        [('x', 10), ('y', 20), ('z', 30)]
+    ], type=map_type)
+
+    # Nested structures
+    nested = pa.struct([
+        ('id', pa.int32()),
+        ('tags', pa.list_(pa.string())),
+        ('metrics', pa.map_(pa.string(), pa.float64()))
+    ])
+
+    print(f"List type: {list_array.type}")
+    print(f"Struct fields: {struct_array.type}")
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/array/builder_nested.h>
+
+    void NestedTypes() {
+      // List type
+      auto list_type = arrow::list(arrow::int32());
+      
+      arrow::ListBuilder list_builder(
+        arrow::default_memory_pool(),
+        std::make_shared<arrow::Int32Builder>()
+      );
+      
+      // Append a list [1, 2, 3]
+      ARROW_CHECK_OK(list_builder.Append());
+      auto* value_builder = 
+        static_cast<arrow::Int32Builder*>(list_builder.value_builder());
+      ARROW_CHECK_OK(value_builder->Append(1));
+      ARROW_CHECK_OK(value_builder->Append(2));
+      ARROW_CHECK_OK(value_builder->Append(3));
+
+      std::shared_ptr<arrow::Array> list_array;
+      ARROW_CHECK_OK(list_builder.Finish(&list_array));
+
+      // Struct type
+      auto struct_type = arrow::struct_({
+        arrow::field("name", arrow::utf8()),
+        arrow::field("age", arrow::int32()),
+        arrow::field("score", arrow::float64())
+      });
+      
+      arrow::StructBuilder struct_builder(
+        struct_type,
+        arrow::default_memory_pool(),
+        {
+          std::make_shared<arrow::StringBuilder>(),
+          std::make_shared<arrow::Int32Builder>(),
+          std::make_shared<arrow::DoubleBuilder>()
+        }
+      );
+
+      // Map type
+      auto map_type = arrow::map(
+        arrow::utf8(),
+        arrow::int32()
+      );
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Dictionary Types
+
+Dictionary encoding is efficient for data with many repeated values.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+
+    # Create dictionary encoded array
+    categories = ['red', 'green', 'blue', 'red', 'green', 'red']
+    dict_array = pa.array(categories).dictionary_encode()
+    
+    print(f"Type: {dict_array.type}")
+    print(f"Indices: {dict_array.indices}")
+    print(f"Dictionary: {dict_array.dictionary}")
+
+    # Specify index and value types
+    dict_type = pa.dictionary(pa.int8(), pa.string())
+    typed_dict = pa.array(categories, type=dict_type)
+
+    # Dictionary with null values
+    with_nulls = pa.array(['a', 'b', None, 'a'], type=dict_type)
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/compute/api.h>
+
+    arrow::Result<std::shared_ptr<arrow::Array>> 
+    CreateDictionaryArray() {
+      // Create the dictionary (unique values)
+      arrow::StringBuilder dict_builder;
+      ARROW_RETURN_NOT_OK(dict_builder.Append("red"));
+      ARROW_RETURN_NOT_OK(dict_builder.Append("green"));
+      ARROW_RETURN_NOT_OK(dict_builder.Append("blue"));
+      
+      std::shared_ptr<arrow::Array> dictionary;
+      ARROW_RETURN_NOT_OK(dict_builder.Finish(&dictionary));
+
+      // Create indices
+      arrow::Int8Builder index_builder;
+      ARROW_RETURN_NOT_OK(index_builder.Append(0));  // red
+      ARROW_RETURN_NOT_OK(index_builder.Append(1));  // green
+      ARROW_RETURN_NOT_OK(index_builder.Append(0));  // red
+      
+      std::shared_ptr<arrow::Array> indices;
+      ARROW_RETURN_NOT_OK(index_builder.Finish(&indices));
+
+      // Create dictionary type
+      auto dict_type = arrow::dictionary(
+        arrow::int8(),
+        arrow::utf8()
+      );
+
+      // Create dictionary array
+      return arrow::DictionaryArray::FromArrays(
+        dict_type, indices, dictionary);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+Dictionary encoding can significantly reduce memory usage and improve performance for categorical data. The dictionary is shared across all chunks in a ChunkedArray.
+</Note>
+
+## Type Checking and Conversion
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    array = pa.array([1, 2, 3])
+
+    # Type checking
+    print(pa.types.is_integer(array.type))
+    print(pa.types.is_floating(array.type))
+    print(pa.types.is_string(array.type))
+    print(pa.types.is_temporal(pa.timestamp('ms')))
+
+    # Type conversion (cast)
+    int_array = pa.array([1, 2, 3], type=pa.int32())
+    float_array = pc.cast(int_array, pa.float64())
+    
+    string_array = pa.array(['1', '2', '3'])
+    int_from_string = pc.cast(string_array, pa.int32())
+
+    # Safe casting (returns error on failure)
+    try:
+        result = pc.cast(pa.array(['abc']), pa.int32(), safe=True)
+    except pa.ArrowInvalid as e:
+        print(f"Cast failed: {e}")
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/compute/api.h>
+
+    void TypeCheckingAndConversion() {
+      auto array = arrow::ArrayFromJSON(arrow::int32(), "[1, 2, 3]");
+      
+      // Type checking
+      if (arrow::is_integer(array.ValueOrDie()->type()->id())) {
+        std::cout << "Is integer" << std::endl;
+      }
+
+      // Type conversion
+      arrow::compute::CastOptions options;
+      options.to_type = arrow::float64();
+      
+      auto result = arrow::compute::Cast(
+        *array.ValueOrDie(), 
+        options
+      );
+      
+      if (result.ok()) {
+        auto float_array = result.ValueOrDie().make_array();
+        // Use float_array...
+      }
+    }
+    ```
+  </Tab>
+</Tabs>

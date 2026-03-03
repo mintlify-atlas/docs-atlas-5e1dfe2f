@@ -1,0 +1,433 @@
+---
+title: Extension Types
+description: Define custom data types while maintaining interoperability with Arrow's columnar format
+---
+
+Extension types allow you to define custom data types that are built on top of Arrow's built-in types. They enable domain-specific semantics while preserving Arrow's memory layout and interoperability.
+
+## Overview
+
+Extension types provide:
+
+- **Custom semantics**: Attach application-specific meaning to Arrow data
+- **Storage transparency**: Use existing Arrow types for physical storage
+- **Serialization support**: Automatically serialize/deserialize metadata
+- **IPC compatibility**: Exchange extension types across processes and languages
+- **Type safety**: Strong typing for domain-specific data
+
+## Core Concepts
+
+An extension type consists of:
+
+1. **Storage type**: The underlying Arrow type used for physical storage
+2. **Extension name**: A unique identifier for the extension type
+3. **Metadata**: Serialized parameters that define the type instance
+4. **Array wrapper**: Optional custom array class for the extension data
+
+## Defining an Extension Type
+
+### Basic Extension Type
+
+Create a custom extension type by subclassing `ExtensionType`:
+
+```cpp
+#include "arrow/extension_type.h"
+
+class UuidType : public arrow::ExtensionType {
+ public:
+  UuidType() : arrow::ExtensionType(arrow::fixed_size_binary(16)) {}
+
+  std::string extension_name() const override {
+    return "uuid";
+  }
+
+  bool ExtensionEquals(const ExtensionType& other) const override {
+    return other.extension_name() == this->extension_name();
+  }
+
+  std::shared_ptr<arrow::Array> MakeArray(
+      std::shared_ptr<arrow::ArrayData> data) const override {
+    return std::make_shared<UuidArray>(data);
+  }
+
+  arrow::Result<std::shared_ptr<arrow::DataType>> Deserialize(
+      std::shared_ptr<arrow::DataType> storage_type,
+      const std::string& serialized_data) const override {
+    // Validate storage type
+    if (!storage_type->Equals(*arrow::fixed_size_binary(16))) {
+      return arrow::Status::Invalid(
+          "UUID type requires fixed_size_binary(16) storage");
+    }
+    return std::make_shared<UuidType>();
+  }
+
+  std::string Serialize() const override {
+    // No parameters to serialize for UUID
+    return "";
+  }
+};
+```
+
+### Extension Array
+
+Optionally define a custom array class:
+
+```cpp
+class UuidArray : public arrow::ExtensionArray {
+ public:
+  using arrow::ExtensionArray::ExtensionArray;
+
+  // Helper method to get UUID at index
+  std::string GetUuidString(int64_t i) const {
+    const auto& binary_array = 
+        arrow::internal::checked_cast<const arrow::FixedSizeBinaryArray&>(
+            *storage());
+    
+    if (binary_array.IsNull(i)) {
+      return "";
+    }
+    
+    const uint8_t* data = binary_array.GetValue(i);
+    // Format as UUID string
+    char buffer[37];
+    snprintf(buffer, sizeof(buffer),
+             "%02x%02x%02x%02x-%02x%02x-%02x%02x-"
+             "%02x%02x-%02x%02x%02x%02x%02x%02x",
+             data[0], data[1], data[2], data[3],
+             data[4], data[5], data[6], data[7],
+             data[8], data[9], data[10], data[11],
+             data[12], data[13], data[14], data[15]);
+    return std::string(buffer);
+  }
+};
+```
+
+## Parametric Extension Types
+
+Create extension types with parameters:
+
+```cpp
+class JSONType : public arrow::ExtensionType {
+ public:
+  explicit JSONType(int32_t max_length)
+      : arrow::ExtensionType(arrow::utf8()),
+        max_length_(max_length) {}
+
+  int32_t max_length() const { return max_length_; }
+
+  std::string extension_name() const override {
+    return "json";
+  }
+
+  bool ExtensionEquals(const ExtensionType& other) const override {
+    if (other.extension_name() != this->extension_name()) {
+      return false;
+    }
+    const auto& other_json = 
+        static_cast<const JSONType&>(other);
+    return this->max_length_ == other_json.max_length_;
+  }
+
+  std::shared_ptr<arrow::Array> MakeArray(
+      std::shared_ptr<arrow::ArrayData> data) const override {
+    return std::make_shared<arrow::ExtensionArray>(data);
+  }
+
+  arrow::Result<std::shared_ptr<arrow::DataType>> Deserialize(
+      std::shared_ptr<arrow::DataType> storage_type,
+      const std::string& serialized_data) const override {
+    if (!storage_type->Equals(*arrow::utf8())) {
+      return arrow::Status::Invalid(
+          "JSON type requires utf8 storage");
+    }
+    
+    // Deserialize max_length parameter
+    if (serialized_data.size() != sizeof(int32_t)) {
+      return arrow::Status::Invalid(
+          "Invalid serialized JSON type");
+    }
+    int32_t max_length = 
+        *reinterpret_cast<const int32_t*>(serialized_data.data());
+    
+    return std::make_shared<JSONType>(max_length);
+  }
+
+  std::string Serialize() const override {
+    // Serialize max_length parameter
+    std::string result(sizeof(int32_t), '\0');
+    *reinterpret_cast<int32_t*>(&result[0]) = max_length_;
+    return result;
+  }
+
+ private:
+  int32_t max_length_;
+};
+```
+
+## Registering Extension Types
+
+### Global Registration
+
+Register extension types globally for automatic deserialization:
+
+```cpp
+// Register the type
+auto uuid_type = std::make_shared<UuidType>();
+arrow::Status status = arrow::RegisterExtensionType(uuid_type);
+if (!status.ok()) {
+  std::cerr << "Registration failed: " << status;
+}
+
+// Now the type can be deserialized automatically
+// across IPC boundaries
+```
+
+### Unregistering Types
+
+```cpp
+// Unregister when no longer needed
+arrow::Status status = arrow::UnregisterExtensionType("uuid");
+```
+
+### Querying Registered Types
+
+```cpp
+// Look up registered type
+std::shared_ptr<arrow::ExtensionType> type = 
+    arrow::GetExtensionType("uuid");
+
+if (type) {
+  std::cout << "Found type: " << type->extension_name();
+} else {
+  std::cout << "Type not registered";
+}
+```
+
+## Using Extension Types
+
+### Creating Arrays
+
+```cpp
+// Create storage array (fixed_size_binary)
+arrow::FixedSizeBinaryBuilder builder(arrow::fixed_size_binary(16));
+
+// Add UUID values
+std::array<uint8_t, 16> uuid1 = {/* UUID bytes */};
+std::array<uint8_t, 16> uuid2 = {/* UUID bytes */};
+
+builder.Append(uuid1.data());
+builder.Append(uuid2.data());
+builder.AppendNull();
+
+std::shared_ptr<arrow::Array> storage_array;
+builder.Finish(&storage_array);
+
+// Wrap as extension array
+auto uuid_type = std::make_shared<UuidType>();
+std::shared_ptr<arrow::Array> uuid_array = 
+    arrow::ExtensionType::WrapArray(uuid_type, storage_array);
+
+// Access through extension array
+auto typed_array = 
+    std::static_pointer_cast<UuidArray>(uuid_array);
+std::string uuid_str = typed_array->GetUuidString(0);
+```
+
+### Working with Schemas
+
+```cpp
+// Create schema with extension types
+auto uuid_type = std::make_shared<UuidType>();
+auto json_type = std::make_shared<JSONType>(1024);
+
+auto schema = arrow::schema({
+    arrow::field("id", uuid_type),
+    arrow::field("metadata", json_type),
+    arrow::field("value", arrow::int64())
+});
+
+// Use in record batches
+std::shared_ptr<arrow::RecordBatch> batch = 
+    arrow::RecordBatch::Make(schema, num_rows, 
+                             {uuid_array, json_array, value_array});
+```
+
+## Nested Extension Types
+
+Extension types can wrap complex storage types:
+
+```cpp
+class CoordinateType : public arrow::ExtensionType {
+ public:
+  CoordinateType() 
+      : arrow::ExtensionType(
+            arrow::struct_({
+                arrow::field("x", arrow::float64()),
+                arrow::field("y", arrow::float64())
+            })) {}
+
+  std::string extension_name() const override {
+    return "coordinate";
+  }
+
+  // ... other required methods
+};
+```
+
+## IPC and Serialization
+
+Extension types are automatically handled in IPC:
+
+```cpp
+// Write record batch with extension types
+std::shared_ptr<arrow::io::FileOutputStream> out_stream;
+arrow::io::FileOutputStream::Open("data.arrow", &out_stream);
+
+std::shared_ptr<arrow::ipc::RecordBatchWriter> writer;
+arrow::ipc::MakeFileWriter(out_stream, batch->schema(), &writer);
+
+writer->WriteRecordBatch(*batch);
+writer->Close();
+out_stream->Close();
+
+// Read back - extension types are preserved
+std::shared_ptr<arrow::io::RandomAccessFile> in_stream;
+arrow::io::ReadableFile::Open("data.arrow", &in_stream);
+
+std::shared_ptr<arrow::ipc::RecordBatchFileReader> reader;
+arrow::ipc::RecordBatchFileReader::Open(in_stream, &reader);
+
+std::shared_ptr<arrow::RecordBatch> read_batch;
+reader->ReadRecordBatch(0, &read_batch);
+
+// Extension type metadata is automatically restored
+auto field_type = read_batch->schema()->field(0)->type();
+if (field_type->id() == arrow::Type::EXTENSION) {
+  auto ext_type = 
+      std::static_pointer_cast<arrow::ExtensionType>(field_type);
+  std::cout << "Extension: " << ext_type->extension_name();
+}
+```
+
+## Storage Type Considerations
+
+### Choosing Storage Types
+
+```cpp
+// Primitive storage - simple, efficient
+class TemperatureType : public arrow::ExtensionType {
+  TemperatureType() : ExtensionType(arrow::float32()) {}
+  // Stores temperatures as 32-bit floats
+};
+
+// Fixed-size storage - known size data
+class IPv6Type : public arrow::ExtensionType {
+  IPv6Type() : ExtensionType(arrow::fixed_size_binary(16)) {}
+  // Stores IPv6 addresses as 128-bit values
+};
+
+// Variable-size storage - flexible length
+class MarkdownType : public arrow::ExtensionType {
+  MarkdownType() : ExtensionType(arrow::utf8()) {}
+  // Stores markdown documents as UTF-8 strings
+};
+
+// Nested storage - complex structures
+class RangeType : public arrow::ExtensionType {
+  RangeType() : ExtensionType(
+      arrow::struct_({
+          arrow::field("min", arrow::int64()),
+          arrow::field("max", arrow::int64())
+      })) {}
+  // Stores ranges as struct with min/max fields
+};
+```
+
+## Best Practices
+
+### Unique Extension Names
+
+```cpp
+// Use namespaced names to avoid collisions
+std::string extension_name() const override {
+  return "com.example.myapp.uuid";  // Namespaced
+}
+```
+
+### Backward Compatibility
+
+```cpp
+arrow::Result<std::shared_ptr<arrow::DataType>> Deserialize(
+    std::shared_ptr<arrow::DataType> storage_type,
+    const std::string& serialized_data) const override {
+  
+  // Support multiple serialization versions
+  if (serialized_data.empty()) {
+    // Version 1: no parameters
+    return std::make_shared<MyType>(/*default params*/);
+  } else if (serialized_data.size() == 4) {
+    // Version 2: one int32 parameter
+    int32_t param = *reinterpret_cast<const int32_t*>(
+        serialized_data.data());
+    return std::make_shared<MyType>(param);
+  } else {
+    return arrow::Status::Invalid("Unknown serialization format");
+  }
+}
+```
+
+### Error Handling
+
+```cpp
+arrow::Result<std::shared_ptr<arrow::DataType>> Deserialize(
+    std::shared_ptr<arrow::DataType> storage_type,
+    const std::string& serialized_data) const override {
+  
+  // Validate storage type
+  if (!IsCompatibleStorageType(storage_type)) {
+    return arrow::Status::TypeError(
+        "Incompatible storage type for ", extension_name());
+  }
+  
+  // Validate serialized data
+  if (!IsValidSerialization(serialized_data)) {
+    return arrow::Status::Invalid(
+        "Invalid serialization for ", extension_name());
+  }
+  
+  // ... proceed with deserialization
+}
+```
+
+## When to Use Extension Types
+
+Extension types are ideal for:
+
+- **Domain-specific semantics**: Geospatial coordinates, UUIDs, custom units
+- **Type safety**: Prevent mixing incompatible data at compile time
+- **Validation**: Enforce constraints on data values
+- **Metadata preservation**: Maintain type information across IPC boundaries
+- **Interoperability**: Share custom types between applications
+
+Consider built-in types when:
+
+- **Simple data**: No special semantics needed
+- **Performance critical**: Extension type overhead matters
+- **Wide compatibility**: Consumers don't support extensions
+
+<Warning>
+  **Important Considerations**
+  
+  - Extension types must be registered before deserializing data containing them
+  - The storage type layout cannot change - extensions are metadata only
+  - Extension names should be globally unique to avoid conflicts
+  - Cross-language extension types require registration in each language
+  - Compute functions may not recognize extension types (they see storage type)
+</Warning>
+
+## Related Resources
+
+- [Data Types](/guides/types)
+- [Schema and Fields](/guides/schema)
+- [IPC and Serialization](/guides/ipc)
+- [Array Building](/guides/arrays)

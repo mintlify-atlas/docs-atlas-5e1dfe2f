@@ -1,0 +1,307 @@
+---
+title: Gandiva Expression Compiler
+description: Use LLVM-based runtime code generation for high-performance expression evaluation on Apache Arrow data
+---
+
+Gandiva is an LLVM-based expression compiler for Apache Arrow that generates highly optimized native code for evaluating complex expressions on columnar data. By compiling expressions at runtime, Gandiva achieves significant performance improvements over interpreted evaluation.
+
+## Overview
+
+Gandiva uses LLVM to compile expressions into native machine code at runtime, enabling:
+
+- **High-performance projections**: Compute derived columns from existing data
+- **Efficient filtering**: Select rows based on complex conditions
+- **Vectorized execution**: Process entire batches of data at once
+- **Expression caching**: Reuse compiled code across multiple evaluations
+
+## Core Concepts
+
+### Projections
+
+Projectors evaluate expressions to compute new columns from input data. A projector is built once for a schema and set of expressions, then reused for multiple record batches.
+
+```cpp
+#include "gandiva/projector.h"
+#include "gandiva/tree_expr_builder.h"
+
+// Define input schema
+auto field_a = arrow::field("a", arrow::int32());
+auto field_b = arrow::field("b", arrow::int32());
+auto schema = arrow::schema({field_a, field_b});
+
+// Build expressions using TreeExprBuilder
+auto node_a = gandiva::TreeExprBuilder::MakeField(field_a);
+auto node_b = gandiva::TreeExprBuilder::MakeField(field_b);
+auto sum_node = gandiva::TreeExprBuilder::MakeFunction(
+    "add", {node_a, node_b}, arrow::int32());
+
+// Create output field and expression
+auto field_sum = arrow::field("sum", arrow::int32());
+auto expr = gandiva::TreeExprBuilder::MakeExpression(sum_node, field_sum);
+
+// Build the projector
+std::shared_ptr<gandiva::Projector> projector;
+auto status = gandiva::Projector::Make(
+    schema, {expr}, &projector);
+
+// Evaluate on record batches
+arrow::ArrayVector output;
+status = projector->Evaluate(*batch, arrow::default_memory_pool(), &output);
+```
+
+### Filters
+
+Filters evaluate boolean conditions to select rows from record batches. The output is a selection vector containing indices of matching rows.
+
+```cpp
+#include "gandiva/filter.h"
+#include "gandiva/selection_vector.h"
+
+// Build condition: a + b < 100
+auto node_a = gandiva::TreeExprBuilder::MakeField(field_a);
+auto node_b = gandiva::TreeExprBuilder::MakeField(field_b);
+auto sum = gandiva::TreeExprBuilder::MakeFunction(
+    "add", {node_a, node_b}, arrow::int32());
+auto literal_100 = gandiva::TreeExprBuilder::MakeLiteral((int32_t)100);
+auto less_than = gandiva::TreeExprBuilder::MakeFunction(
+    "less_than", {sum, literal_100}, arrow::boolean());
+auto condition = gandiva::TreeExprBuilder::MakeCondition(less_than);
+
+// Build the filter
+std::shared_ptr<gandiva::Filter> filter;
+status = gandiva::Filter::Make(schema, condition, &filter);
+
+// Evaluate on record batches
+auto selection_vector = gandiva::SelectionVector::MakeInt32(
+    batch->num_rows(), arrow::default_memory_pool());
+status = filter->Evaluate(*batch, selection_vector);
+
+// Access selected row indices
+int32_t num_selected = selection_vector->GetNumSlots();
+const int32_t* indices = selection_vector->GetIndexes();
+```
+
+## Expression Building
+
+Gandiva provides the `TreeExprBuilder` class for constructing expression trees:
+
+### Literals
+
+```cpp
+// Numeric literals
+auto int_node = gandiva::TreeExprBuilder::MakeLiteral((int32_t)42);
+auto float_node = gandiva::TreeExprBuilder::MakeLiteral(3.14f);
+auto bool_node = gandiva::TreeExprBuilder::MakeLiteral(true);
+
+// String literals
+auto str_node = gandiva::TreeExprBuilder::MakeStringLiteral("hello");
+
+// Null literals
+auto null_node = gandiva::TreeExprBuilder::MakeNull(arrow::int32());
+```
+
+### Functions
+
+Gandiva supports a rich set of built-in functions:
+
+```cpp
+// Arithmetic: add, subtract, multiply, divide
+auto product = gandiva::TreeExprBuilder::MakeFunction(
+    "multiply", {node_a, node_b}, arrow::int32());
+
+// Comparison: equal, not_equal, less_than, greater_than
+auto comparison = gandiva::TreeExprBuilder::MakeFunction(
+    "greater_than", {node_a, literal}, arrow::boolean());
+
+// String functions: upper, lower, concat, substring
+auto upper = gandiva::TreeExprBuilder::MakeFunction(
+    "upper", {str_field}, arrow::utf8());
+
+// Date/time functions: extract_year, extract_month, castDATE
+auto year = gandiva::TreeExprBuilder::MakeFunction(
+    "extractYear", {date_field}, arrow::int64());
+```
+
+### Conditional Expressions
+
+```cpp
+// IF-THEN-ELSE
+auto if_expr = gandiva::TreeExprBuilder::MakeIf(
+    condition_node,  // if condition
+    then_node,       // then value
+    else_node,       // else value
+    arrow::int32()); // result type
+
+// Boolean AND/OR
+auto and_expr = gandiva::TreeExprBuilder::MakeAnd({cond1, cond2, cond3});
+auto or_expr = gandiva::TreeExprBuilder::MakeOr({cond1, cond2});
+```
+
+### IN Expressions
+
+```cpp
+// IN expression for set membership testing
+std::unordered_set<int32_t> valid_values = {1, 5, 10, 15, 20};
+auto in_expr = gandiva::TreeExprBuilder::MakeInExpressionInt32(
+    node_a, valid_values);
+
+// String IN expression
+std::unordered_set<std::string> valid_strings = {"foo", "bar", "baz"};
+auto str_in_expr = gandiva::TreeExprBuilder::MakeInExpressionString(
+    str_node, valid_strings);
+```
+
+## Configuration Options
+
+Customize Gandiva behavior with `Configuration`:
+
+```cpp
+#include "gandiva/configuration.h"
+
+// Create configuration
+auto config = std::make_shared<gandiva::Configuration>();
+
+// Enable/disable optimizations
+config->set_optimize(true);
+
+// Target host CPU for optimal SIMD usage
+config->target_host_cpu(true);
+
+// Use configuration when building projector/filter
+status = gandiva::Projector::Make(
+    schema, expressions, config, &projector);
+```
+
+### Configuration Builder
+
+```cpp
+gandiva::ConfigurationBuilder builder;
+
+// Default configuration with optimizations enabled
+auto config = builder.build();
+
+// Configuration with specific optimization level
+auto config = builder.build(/*optimize=*/true);
+
+// Configuration with IR dumping for debugging
+auto config = builder.build_with_ir_dumping(/*dump_ir=*/true);
+```
+
+## Performance Considerations
+
+### Expression Caching
+
+Gandiva automatically caches compiled expressions. Reusing the same projector or filter across multiple batches avoids recompilation:
+
+```cpp
+// Build once
+std::shared_ptr<gandiva::Projector> projector;
+gandiva::Projector::Make(schema, expressions, &projector);
+
+// Reuse for multiple batches
+for (const auto& batch : batches) {
+    arrow::ArrayVector output;
+    projector->Evaluate(*batch, pool, &output);
+    // Process output...
+}
+```
+
+### Pre-allocated Output
+
+For maximum performance, pre-allocate output arrays:
+
+```cpp
+// Pre-allocate output arrays
+gandiva::ArrayDataVector output(num_expressions);
+for (size_t i = 0; i < num_expressions; ++i) {
+    // Allocate with sufficient capacity
+    auto data = arrow::ArrayData::Make(
+        output_types[i], batch->num_rows());
+    output[i] = data;
+}
+
+// Evaluate with pre-allocated output
+status = projector->Evaluate(*batch, output);
+```
+
+### Selection Vectors
+
+When filtering, use selection vectors to avoid copying data:
+
+```cpp
+// Create selection vector
+auto selection = gandiva::SelectionVector::MakeInt32(
+    batch->num_rows(), pool);
+
+// Filter produces indices only
+filter->Evaluate(*batch, selection);
+
+// Use selection vector with projector
+projector->Evaluate(*batch, selection.get(), pool, &output);
+```
+
+## When to Use Gandiva
+
+Gandiva excels at:
+
+- **Complex expressions**: Multi-step calculations with many operations
+- **High throughput**: Processing large batches where compilation overhead is amortized
+- **CPU-bound workloads**: Compute-intensive operations that benefit from SIMD
+- **Reusable expressions**: Same expressions evaluated on many batches
+
+Consider alternatives for:
+
+- **Simple operations**: Single-operation expressions may not justify compilation overhead
+- **One-time evaluations**: Compilation cost dominates for single-batch processing
+- **I/O-bound workloads**: Where computation is not the bottleneck
+
+<Warning>
+  **Prerequisites**
+  
+  - Gandiva requires LLVM to be installed and linked with Arrow
+  - LLVM compilation adds significant build time and binary size
+  - Runtime compilation requires execute permissions on generated code
+  - Not all Arrow data types are supported (check function registry)
+</Warning>
+
+## Function Registry
+
+Query available functions at runtime:
+
+```cpp
+#include "gandiva/function_registry.h"
+
+// Get default function registry
+auto registry = gandiva::default_function_registry();
+
+// Check if function exists
+auto native_funcs = registry->GetNativeFunctions();
+for (const auto& func : native_funcs) {
+    std::cout << func->ToString() << std::endl;
+}
+```
+
+## Error Handling
+
+All Gandiva operations return `arrow::Status`:
+
+```cpp
+auto status = gandiva::Projector::Make(schema, exprs, &projector);
+if (!status.ok()) {
+    std::cerr << "Failed to build projector: " 
+              << status.ToString() << std::endl;
+    return;
+}
+
+status = projector->Evaluate(*batch, pool, &output);
+if (!status.ok()) {
+    std::cerr << "Evaluation failed: " 
+              << status.ToString() << std::endl;
+}
+```
+
+## Related Resources
+
+- [Apache Arrow Compute Functions](/guides/compute)
+- [Record Batches and Arrays](/guides/arrays)
+- [Memory Management](/guides/memory)

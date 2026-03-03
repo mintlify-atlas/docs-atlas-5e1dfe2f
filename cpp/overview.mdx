@@ -1,0 +1,267 @@
+---
+title: C++ Library Overview
+description: High-level overview of the Apache Arrow C++ implementation and its core components
+---
+
+The Apache Arrow C++ library provides a comprehensive implementation of the Arrow columnar memory format and computation libraries. It serves as the reference implementation and powers many other Arrow implementations.
+
+## Architecture Layers
+
+Arrow C++ is organized into distinct layers, each serving a specific purpose:
+
+### Physical Layer
+
+**Memory Management** provides a uniform API over memory allocated through various means:
+- Heap allocation
+- Memory-mapped files  
+- Static memory areas
+
+The **Buffer** abstraction represents a contiguous area of physical data with well-defined lifetime semantics.
+
+```cpp
+#include <arrow/api.h>
+#include <arrow/buffer.h>
+
+// Allocate a buffer
+arrow::Result<std::unique_ptr<arrow::Buffer>> maybe_buffer = 
+    arrow::AllocateBuffer(4096);
+
+if (!maybe_buffer.ok()) {
+    // Handle allocation error
+}
+
+std::shared_ptr<arrow::Buffer> buffer = *std::move(maybe_buffer);
+uint8_t* buffer_data = buffer->mutable_data();
+memcpy(buffer_data, "hello world", 11);
+```
+
+### One-Dimensional Layer
+
+**Data Types** govern the logical interpretation of physical data. Arrow supports:
+- Primitive types (integers, floats, booleans)
+- Temporal types (timestamps, dates, times)
+- Binary types (strings, binary data)
+- Nested types (lists, structs, maps, unions)
+
+**Arrays** combine buffers with a data type to create a logical sequence of values:
+
+```cpp
+#include <arrow/api.h>
+
+arrow::Int64Builder builder;
+builder.Reserve(5);
+builder.AppendValues({1, 2, 3, 4, 5});
+
+std::shared_ptr<arrow::Array> array;
+ARROW_RETURN_NOT_OK(builder.Finish(&array));
+```
+
+**Chunked Arrays** comprise multiple same-type arrays into a longer logical sequence without requiring physical contiguity.
+
+### Two-Dimensional Layer
+
+**Schemas** describe the structure of tabular data with field names, types, and optional metadata:
+
+```cpp
+auto field_a = arrow::field("id", arrow::int32());
+auto field_b = arrow::field("name", arrow::utf8());
+auto schema = arrow::schema({field_a, field_b});
+```
+
+**Tables** are collections of chunked arrays organized according to a schema. They provide the most capable dataset abstraction in Arrow.
+
+**Record Batches** are collections of contiguous arrays, ideal for:
+- Incremental construction
+- Serialization and IPC
+- Streaming data processing
+
+### Compute Layer
+
+**Datums** are flexible dataset references that can hold arrays, tables, scalars, or other data shapes.
+
+**Kernels** are specialized computation functions that operate efficiently on Arrow data:
+
+```cpp
+#include <arrow/compute/api.h>
+
+std::shared_ptr<arrow::Array> numbers = ...;
+std::shared_ptr<arrow::Scalar> increment = arrow::MakeScalar(10);
+
+arrow::Datum result;
+ARROW_ASSIGN_OR_RAISE(result, 
+    arrow::compute::Add(numbers, increment));
+```
+
+**Acero** is a streaming execution engine for complex query workloads. It processes data as a graph of operators:
+
+```cpp
+#include <arrow/acero/exec_plan.h>
+
+// Create execution plan
+ARROW_ASSIGN_OR_RAISE(auto plan, arrow::acero::ExecPlan::Make());
+
+// Add nodes and execute
+// (See Acero documentation for details)
+```
+
+### I/O Layer
+
+**Streams** provide sequential or seekable access to external data:
+- `InputStream` for sequential reading
+- `RandomAccessFile` for parallel, positioned reads
+- `OutputStream` for writing data
+
+```cpp
+#include <arrow/io/api.h>
+
+// Open file for reading
+ARROW_ASSIGN_OR_RAISE(auto input,
+    arrow::io::ReadableFile::Open("data.arrow"));
+
+// Memory-mapped file for zero-copy access
+ARROW_ASSIGN_OR_RAISE(auto mmap,
+    arrow::io::MemoryMappedFile::Open("data.arrow", arrow::io::FileMode::READ));
+```
+
+### IPC and File Formats
+
+**Inter-Process Communication** uses a zero-copy messaging format for data exchange:
+- Arrow IPC/Feather format
+- Integration with other processes and languages
+
+**File Format Support** includes readers and writers for:
+- **Parquet** - Columnar storage format
+- **CSV** - Text-based tabular data
+- **JSON** - Structured data interchange
+- **ORC** - Optimized Row Columnar format
+
+### Filesystem Layer
+
+A **filesystem abstraction** enables reading and writing from various backends:
+- Local filesystem
+- Amazon S3
+- Google Cloud Storage
+- HDFS
+- Custom implementations via registration
+
+```cpp
+#include <arrow/filesystem/api.h>
+
+// Get local filesystem
+auto fs = arrow::fs::FileSystemFromUri("file:///").ValueOrDie();
+
+// Access S3
+auto s3_fs = arrow::fs::FileSystemFromUri("s3://bucket/path").ValueOrDie();
+```
+
+### Device Layer
+
+**CUDA Integration** provides basic GPU support:
+- GPU-allocated memory management
+- Device-aware buffer operations
+- Integration with CUDA contexts
+
+## Key Design Principles
+
+### Immutability
+
+Arrow data structures are immutable after construction. Use builder classes to construct data incrementally.
+
+### Result and Status
+
+Arrow uses `Result<T>` and `Status` for error handling:
+
+```cpp
+// Result<T> for functions returning values
+arrow::Result<std::shared_ptr<arrow::Array>> maybe_array = builder.Finish();
+if (!maybe_array.ok()) {
+    std::cerr << maybe_array.status().ToString() << std::endl;
+}
+auto array = *maybe_array;
+
+// Status for functions with no return value
+arrow::Status status = DoSomething();
+ARROW_RETURN_NOT_OK(status);
+```
+
+<Note>
+Always check the status of operations before using results. Use the `ARROW_ASSIGN_OR_RAISE` and `ARROW_RETURN_NOT_OK` macros for cleaner error handling.
+</Note>
+
+### Memory Pools
+
+All memory allocation goes through `MemoryPool` instances:
+
+```cpp
+arrow::MemoryPool* pool = arrow::default_memory_pool();
+
+// Most functions accept a memory pool parameter
+ARROW_ASSIGN_OR_RAISE(auto buffer, 
+    arrow::AllocateBuffer(1024, pool));
+```
+
+<Tip>
+The default memory pool uses jemalloc or mimalloc when available for better performance. You can override this with the `ARROW_DEFAULT_MEMORY_POOL` environment variable.
+</Tip>
+
+### Zero-Copy Operations
+
+Arrow emphasizes zero-copy operations wherever possible:
+- Slicing arrays and buffers
+- Sharing data between processes
+- Memory-mapped file access
+- Buffer views across devices
+
+## Getting Started
+
+To use Arrow C++ in your project:
+
+**CMake Integration:**
+
+```cmake
+cmake_minimum_required(VERSION 3.25)
+project(MyArrowProject)
+
+find_package(Arrow REQUIRED)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE Arrow::arrow_shared)
+```
+
+**Basic Example:**
+
+```cpp
+#include <arrow/api.h>
+#include <arrow/io/api.h>
+#include <iostream>
+
+int main() {
+    // Create an array
+    arrow::Int32Builder builder;
+    builder.Append(1);
+    builder.Append(2);
+    builder.Append(3);
+    
+    std::shared_ptr<arrow::Array> array;
+    if (!builder.Finish(&array).ok()) {
+        return 1;
+    }
+    
+    // Create a table
+    auto schema = arrow::schema({arrow::field("numbers", arrow::int32())});
+    auto table = arrow::Table::Make(schema, {array});
+    
+    std::cout << "Created table with " 
+              << table->num_rows() << " rows" << std::endl;
+    
+    return 0;
+}
+```
+
+## Next Steps
+
+- Learn about [building from source](/cpp/building)
+- Explore [arrays and tables](/cpp/arrays-tables) in depth
+- Understand [I/O and memory management](/cpp/io-memory)
+- Use [compute functions](/cpp/compute) for data processing
+- Build complex queries with [Acero](/cpp/acero)

@@ -1,0 +1,263 @@
+---
+title: "C GLib Bindings"
+description: "Use Apache Arrow in C applications with GLib bindings and GObject Introspection support"
+---
+
+## Overview
+
+Apache Arrow GLib is a wrapper library for Arrow C++ that provides C API. It supports [GObject Introspection](https://gi.readthedocs.io/en/latest/), enabling you to create language bindings at runtime or compile time automatically.
+
+## When to Use C GLib
+
+Choose C GLib bindings when you:
+
+- Need to integrate Arrow into C applications or legacy codebases
+- Want to create bindings for languages that support GObject Introspection (Ruby, Python, Lua, etc.)
+- Require a stable C API on top of Arrow C++
+- Are building GNOME or GTK applications that need Arrow functionality
+
+## Installation
+
+### Using Packages (Recommended)
+
+For detailed installation instructions using package managers, see the [official install documentation](https://arrow.apache.org/install/).
+
+### Building from Source
+
+<Tabs>
+  <Tab title="Linux">
+    ```bash
+    # Install dependencies
+    sudo apt install -y gtk-doc-tools libgirepository1.0-dev meson ninja-build
+
+    # Download and extract Arrow source
+    wget 'https://www.apache.org/dyn/closer.lua?action=download&filename=arrow/arrow-12.0.0/apache-arrow-12.0.0.tar.gz' \
+        --output-document apache-arrow-12.0.0.tar.gz
+    tar xf apache-arrow-12.0.0.tar.gz
+    cd apache-arrow-12.0.0
+
+    # Build Arrow C++ first (required)
+    # See Arrow C++ documentation for build instructions
+
+    # Build and install Arrow GLib
+    meson setup c_glib.build c_glib --buildtype=release
+    meson compile -C c_glib.build
+    sudo meson install -C c_glib.build
+    ```
+  </Tab>
+  <Tab title="macOS">
+    ```bash
+    # Install dependencies
+    brew bundle --file=c_glib/Brewfile
+
+    # Download and extract Arrow source
+    wget 'https://www.apache.org/dyn/closer.lua?action=download&filename=arrow/arrow-12.0.0/apache-arrow-12.0.0.tar.gz' \
+        --output-document apache-arrow-12.0.0.tar.gz
+    tar xf apache-arrow-12.0.0.tar.gz
+    cd apache-arrow-12.0.0
+
+    # Build Arrow C++ first (required)
+    # See Arrow C++ documentation for build instructions
+
+    # Build and install Arrow GLib
+    meson setup c_glib.build c_glib --buildtype=release
+    meson compile -C c_glib.build
+    sudo meson install -C c_glib.build
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  Arrow C++ must be built and installed before building Arrow GLib. Refer to the Arrow C++ documentation for complete build instructions.
+</Note>
+
+## Basic Usage
+
+### Creating Arrays
+
+Here's a simple example demonstrating how to build an Int32 array:
+
+```c
+#include <arrow-glib/arrow-glib.h>
+
+int main(int argc, char **argv) {
+  GArrowInt32ArrayBuilder *builder;
+  GArrowArray *array;
+  GError *error = NULL;
+  gboolean success = TRUE;
+
+  // Create an array builder
+  builder = garrow_int32_array_builder_new();
+
+  // Append values
+  success = garrow_int32_array_builder_append_value(builder, 29, &error);
+  if (success) {
+    success = garrow_int32_array_builder_append_value(builder, 2929, &error);
+  }
+  if (success) {
+    success = garrow_int32_array_builder_append_value(builder, 292929, &error);
+  }
+
+  if (!success) {
+    g_print("Failed to append: %s\n", error->message);
+    g_error_free(error);
+    g_object_unref(builder);
+    return EXIT_FAILURE;
+  }
+
+  // Finish building the array
+  array = garrow_array_builder_finish(GARROW_ARRAY_BUILDER(builder), &error);
+  if (!array) {
+    g_print("Failed to finish: %s\n", error->message);
+    g_error_free(error);
+    g_object_unref(builder);
+    return EXIT_FAILURE;
+  }
+
+  // Access array elements
+  gint64 length = garrow_array_get_length(array);
+  g_print("Length: %" G_GINT64_FORMAT "\n", length);
+
+  for (gint64 i = 0; i < length; i++) {
+    gint32 value = garrow_int32_array_get_value(GARROW_INT32_ARRAY(array), i);
+    g_print("array[%" G_GINT64_FORMAT "] = %d\n", i, value);
+  }
+
+  // Cleanup
+  g_object_unref(array);
+  g_object_unref(builder);
+
+  return EXIT_SUCCESS;
+}
+```
+
+### Compiling C Programs
+
+To compile programs using Arrow GLib:
+
+```bash
+gcc example.c -o example $(pkg-config --cflags --libs arrow-glib)
+```
+
+## API Reference
+
+Arrow GLib provides comprehensive API coverage:
+
+- **Arrow GLib**: Core Arrow functionality (arrays, tables, schemas)
+- **Arrow CUDA GLib**: CUDA/GPU integration
+- **Arrow Dataset GLib**: Dataset API for reading partitioned data
+- **Arrow Flight GLib**: Flight RPC protocol implementation
+- **Arrow Flight SQL GLib**: Flight SQL protocol support
+- **Parquet GLib**: Parquet file format support
+- **Gandiva GLib**: LLVM-based expression compiler
+
+API reference documentation is typically installed at `/usr/local/share/gtk-doc/html/arrow-glib/`.
+
+## Language Bindings via GObject Introspection
+
+Arrow GLib's GObject Introspection support enables automatic bindings for multiple languages:
+
+### Ruby
+
+Use the [red-arrow gem](https://rubygems.org/gems/red-arrow):
+
+```ruby
+require "arrow"
+
+builder = Arrow::Int32ArrayBuilder.new
+builder.append(29)
+builder.append(2929)
+builder.append(292929)
+
+array = builder.finish
+array.each do |value|
+  puts value
+end
+```
+
+### Python
+
+Use [PyGObject](https://wiki.gnome.org/Projects/PyGObject) (note: PyArrow is generally preferred):
+
+```python
+import gi
+gi.require_version('Arrow', '1.0')
+from gi.repository import Arrow
+
+builder = Arrow.Int32ArrayBuilder.new()
+builder.append_value(29)
+builder.append_value(2929)
+builder.append_value(292929)
+
+array = builder.finish()
+for i in range(array.get_length()):
+    print(array.get_value(i))
+```
+
+### Lua
+
+Use [LGI](https://github.com/pavouk/lgi):
+
+```lua
+local lgi = require 'lgi'
+local Arrow = lgi.Arrow
+
+local builder = Arrow.Int32ArrayBuilder.new()
+builder:append_value(29)
+builder:append_value(2929)
+builder:append_value(292929)
+
+local array = builder:finish()
+for i = 0, array:get_length() - 1 do
+  print(array:get_value(i))
+end
+```
+
+## Common Use Cases
+
+<CardGroup cols={2}>
+  <Card title="File I/O" icon="file">
+    Read and write Arrow data using the IPC format for efficient serialization
+  </Card>
+  <Card title="Data Interchange" icon="arrows-rotate">
+    Exchange data between C applications and other Arrow implementations
+  </Card>
+  <Card title="Language Bindings" icon="code">
+    Create bindings for languages supporting GObject Introspection
+  </Card>
+  <Card title="Legacy Integration" icon="bridge">
+    Integrate Arrow into existing C codebases and GNOME applications
+  </Card>
+</CardGroup>
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="GitHub Repository" icon="github" href="https://github.com/apache/arrow/tree/main/c_glib">
+    View source code and examples
+  </Card>
+  <Card title="Example Code" icon="code" href="https://github.com/apache/arrow/tree/main/c_glib/example">
+    Browse C example programs
+  </Card>
+  <Card title="Install Guide" icon="download" href="https://arrow.apache.org/install/">
+    Official installation documentation
+  </Card>
+  <Card title="GObject Introspection" icon="book" href="https://gi.readthedocs.io/en/latest/">
+    Learn about GObject Introspection
+  </Card>
+</CardGroup>
+
+## Testing Your Installation
+
+Arrow GLib includes unit tests to verify correct installation:
+
+```bash
+# Install test dependencies
+sudo apt install -y ruby-dev
+sudo gem install bundler
+cd c_glib && bundle install
+
+# Run tests
+cd c_glib.build
+BUNDLE_GEMFILE=../c_glib/Gemfile bundle exec ../c_glib/test/run-test.sh
+```

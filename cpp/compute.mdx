@@ -1,0 +1,498 @@
+---
+title: Compute Functions
+description: Learn how to use Arrow's compute functions for efficient data processing and transformations
+---
+
+Arrow's compute library provides a rich set of functions for data processing, from simple arithmetic to complex aggregations and string operations.
+
+## Overview
+
+Compute functions operate on Arrow data structures (arrays, tables, scalars) and return results in the same format. Functions are:
+- **Type-aware**: Support multiple input types with automatic casting
+- **Null-handling**: Properly propagate null values
+- **SIMD-optimized**: Use CPU vector instructions for performance
+- **Extensible**: Support custom kernels and UDFs
+
+### Initialization
+
+Before using compute functions, initialize the library:
+
+```cpp
+#include <arrow/api.h>
+#include <arrow/compute/api.h>
+
+arrow::Status status = arrow::compute::Initialize();
+if (!status.ok()) {
+    std::cerr << "Failed to initialize compute library" << std::endl;
+}
+```
+
+<Note>
+Always call `arrow::compute::Initialize()` before using compute functions, or only core functions will be available.
+</Note>
+
+## Invoking Functions
+
+There are two ways to call compute functions:
+
+<Tabs>
+  <Tab title="By Name">
+    ```cpp
+    #include <arrow/compute/api.h>
+    
+    std::shared_ptr<arrow::Array> numbers = /* ... */;
+    std::shared_ptr<arrow::Scalar> value = arrow::MakeScalar(10);
+    
+    // Call function by name
+    ARROW_ASSIGN_OR_RAISE(arrow::Datum result,
+        arrow::compute::CallFunction(
+            "add",
+            {numbers, value}
+        ));
+    
+    std::shared_ptr<arrow::Array> result_array = 
+        result.make_array();
+    ```
+  </Tab>
+  
+  <Tab title="Direct API">
+    ```cpp
+    #include <arrow/compute/api.h>
+    
+    std::shared_ptr<arrow::Array> numbers = /* ... */;
+    std::shared_ptr<arrow::Scalar> value = arrow::MakeScalar(10);
+    
+    // Call function directly
+    ARROW_ASSIGN_OR_RAISE(arrow::Datum result,
+        arrow::compute::Add(numbers, value));
+    
+    std::shared_ptr<arrow::Array> result_array = 
+        result.make_array();
+    ```
+  </Tab>
+</Tabs>
+
+### With Options
+
+Many functions accept options to control behavior:
+
+```cpp
+#include <arrow/compute/api.h>
+
+std::shared_ptr<arrow::Array> array = /* ... */;
+
+// Aggregate with options
+arrow::compute::ScalarAggregateOptions options;
+options.skip_nulls = false;  // Include nulls in computation
+options.min_count = 1;       // Require at least 1 non-null value
+
+ARROW_ASSIGN_OR_RAISE(arrow::Datum result,
+    arrow::compute::CallFunction(
+        "min_max",
+        {array},
+        &options
+    ));
+
+// Result is a struct scalar with "min" and "max" fields
+auto struct_scalar = result.scalar_as<arrow::StructScalar>();
+auto min_value = struct_scalar.value[0];
+auto max_value = struct_scalar.value[1];
+```
+
+## Arithmetic Functions
+
+Basic arithmetic operations on numeric arrays:
+
+```cpp
+#include <arrow/compute/api.h>
+
+auto array1 = /* Int64Array: [1, 2, 3, 4, 5] */;
+auto array2 = /* Int64Array: [10, 20, 30, 40, 50] */;
+
+// Addition
+ARROW_ASSIGN_OR_RAISE(auto sum,
+    arrow::compute::Add(array1, array2));
+// Result: [11, 22, 33, 44, 55]
+
+// Subtraction
+ARROW_ASSIGN_OR_RAISE(auto diff,
+    arrow::compute::Subtract(array2, array1));
+// Result: [9, 18, 27, 36, 45]
+
+// Multiplication
+ARROW_ASSIGN_OR_RAISE(auto product,
+    arrow::compute::Multiply(array1, array2));
+// Result: [10, 40, 90, 160, 250]
+
+// Division
+ARROW_ASSIGN_OR_RAISE(auto quotient,
+    arrow::compute::Divide(array2, array1));
+// Result: [10, 10, 10, 10, 10]
+
+// With scalar
+auto scalar = arrow::MakeScalar(2);
+ARROW_ASSIGN_OR_RAISE(auto doubled,
+    arrow::compute::Multiply(array1, scalar));
+// Result: [2, 4, 6, 8, 10]
+```
+
+Available arithmetic functions:
+- `add`, `subtract`, `multiply`, `divide`
+- `power`, `sqrt`, `abs`, `sign`
+- `negate`, `ceil`, `floor`, `round`, `trunc`
+- `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`
+- `ln`, `log10`, `log2`, `log1p`
+
+## Comparison Functions
+
+Compare arrays element-wise:
+
+```cpp
+auto array_a = /* [1, 2, 3, 4, 5] */;
+auto array_b = /* [2, 5, 1, 3, 6] */;
+
+// Greater than
+ARROW_ASSIGN_OR_RAISE(auto gt,
+    arrow::compute::Greater(array_a, array_b));
+// Result: [false, false, true, true, false]
+
+// Equal
+ARROW_ASSIGN_OR_RAISE(auto eq,
+    arrow::compute::Equal(array_a, array_b));
+
+// Not equal
+ARROW_ASSIGN_OR_RAISE(auto ne,
+    arrow::compute::NotEqual(array_a, array_b));
+
+// Less than or equal
+ARROW_ASSIGN_OR_RAISE(auto le,
+    arrow::compute::LessEqual(array_a, array_b));
+```
+
+Comparison functions:
+- `equal`, `not_equal`
+- `greater`, `greater_equal`
+- `less`, `less_equal`
+
+## Aggregation Functions
+
+Compute summary statistics:
+
+<Tabs>
+  <Tab title="Basic Aggregates">
+    ```cpp
+    auto array = /* [1, 2, 3, 4, 5, null, 7, 8, 9, 10] */;
+    
+    // Sum
+    ARROW_ASSIGN_OR_RAISE(auto sum,
+        arrow::compute::Sum(array));
+    // Result: Scalar(49)
+    
+    // Mean
+    ARROW_ASSIGN_OR_RAISE(auto mean,
+        arrow::compute::Mean(array));
+    // Result: Scalar(5.444...)
+    
+    // Min/Max
+    ARROW_ASSIGN_OR_RAISE(auto min_max,
+        arrow::compute::MinMax(array));
+    auto struct_result = min_max.scalar_as<arrow::StructScalar>();
+    // struct_result.value[0] = 1 (min)
+    // struct_result.value[1] = 10 (max)
+    
+    // Count
+    ARROW_ASSIGN_OR_RAISE(auto count,
+        arrow::compute::Count(array));
+    // Result: Scalar(9) - counts non-null values
+    ```
+  </Tab>
+  
+  <Tab title="Statistical">
+    ```cpp
+    auto array = /* numeric array */;
+    
+    // Standard deviation
+    arrow::compute::VarianceOptions opts;
+    opts.ddof = 1;  // Delta degrees of freedom
+    
+    ARROW_ASSIGN_OR_RAISE(auto stddev,
+        arrow::compute::CallFunction(
+            "stddev", {array}, &opts));
+    
+    // Variance
+    ARROW_ASSIGN_OR_RAISE(auto variance,
+        arrow::compute::CallFunction(
+            "variance", {array}, &opts));
+    
+    // Quantile
+    arrow::compute::QuantileOptions q_opts;
+    q_opts.q = {0.25, 0.5, 0.75};  // Quartiles
+    
+    ARROW_ASSIGN_OR_RAISE(auto quantiles,
+        arrow::compute::CallFunction(
+            "quantile", {array}, &q_opts));
+    ```
+  </Tab>
+  
+  <Tab title="Boolean">
+    ```cpp
+    auto bool_array = /* [true, false, true, null, true, false] */;
+    
+    // All (AND)
+    ARROW_ASSIGN_OR_RAISE(auto all,
+        arrow::compute::All(bool_array));
+    // Result: Scalar(false)
+    
+    // Any (OR)
+    ARROW_ASSIGN_OR_RAISE(auto any,
+        arrow::compute::Any(bool_array));
+    // Result: Scalar(true)
+    
+    // With null handling
+    arrow::compute::ScalarAggregateOptions opts;
+    opts.skip_nulls = false;  // Use Kleene logic
+    
+    ARROW_ASSIGN_OR_RAISE(auto all_kleene,
+        arrow::compute::CallFunction(
+            "all", {bool_array}, &opts));
+    ```
+  </Tab>
+</Tabs>
+
+Available aggregations:
+- `sum`, `mean`, `min`, `max`, `min_max`
+- `count`, `count_distinct`
+- `stddev`, `variance`
+- `quantile`, `tdigest`
+- `all`, `any`
+- `first`, `last`
+- `mode`, `product`
+
+## String Functions
+
+Process string and binary data:
+
+```cpp
+#include <arrow/compute/api.h>
+
+auto strings = /* ["hello", "WORLD", null, "Arrow"] */;
+
+// Convert to lowercase
+ARROW_ASSIGN_OR_RAISE(auto lower,
+    arrow::compute::CallFunction("utf8_lower", {strings}));
+// Result: ["hello", "world", null, "arrow"]
+
+// Convert to uppercase
+ARROW_ASSIGN_OR_RAISE(auto upper,
+    arrow::compute::CallFunction("utf8_upper", {strings}));
+// Result: ["HELLO", "WORLD", null, "ARROW"]
+
+// String length
+ARROW_ASSIGN_OR_RAISE(auto lengths,
+    arrow::compute::CallFunction("utf8_length", {strings}));
+// Result: [5, 5, null, 5]
+
+// String matching
+arrow::compute::MatchSubstringOptions match_opts;
+match_opts.pattern = "llo";
+
+ARROW_ASSIGN_OR_RAISE(auto matches,
+    arrow::compute::CallFunction(
+        "match_substring", {strings}, &match_opts));
+// Result: [true, false, null, false]
+
+// String replacement
+arrow::compute::ReplaceSubstringOptions replace_opts;
+replace_opts.pattern = "o";
+replace_opts.replacement = "0";
+
+ARROW_ASSIGN_OR_RAISE(auto replaced,
+    arrow::compute::CallFunction(
+        "replace_substring", {strings}, &replace_opts));
+// Result: ["hell0", "WORLD", null, "Arr0w"]
+```
+
+String functions include:
+- `utf8_upper`, `utf8_lower`, `utf8_capitalize`
+- `utf8_length`, `utf8_reverse`
+- `ascii_upper`, `ascii_lower`
+- `binary_length`
+- `match_substring`, `match_substring_regex`
+- `replace_substring`, `replace_substring_regex`
+- `split_pattern`, `utf8_slice_codeunits`
+- `string_is_ascii`
+
+## Array Functions
+
+Operations on list and other nested arrays:
+
+```cpp
+// List value lengths
+auto lists = /* list<int32>: [[1,2,3], [4,5], null, [6]] */;
+
+ARROW_ASSIGN_OR_RAISE(auto lengths,
+    arrow::compute::CallFunction("list_value_length", {lists}));
+// Result: [3, 2, null, 1]
+
+// Flatten lists
+ARROW_ASSIGN_OR_RAISE(auto flattened,
+    arrow::compute::CallFunction("list_flatten", {lists}));
+// Result: [1, 2, 3, 4, 5, 6]
+```
+
+## Filtering and Selecting
+
+Filter arrays based on boolean masks:
+
+```cpp
+auto values = /* [10, 20, 30, 40, 50] */;
+auto mask = /* [true, false, true, false, true] */;
+
+// Filter values
+ARROW_ASSIGN_OR_RAISE(auto filtered,
+    arrow::compute::Filter(values, mask));
+// Result: [10, 30, 50]
+
+// Take specific indices
+auto indices = /* [0, 2, 4] */;
+ARROW_ASSIGN_OR_RAISE(auto taken,
+    arrow::compute::Take(values, indices));
+// Result: [10, 30, 50]
+```
+
+## Sorting
+
+Sort arrays and get sort indices:
+
+```cpp
+auto array = /* [3, 1, 4, 1, 5, 9, 2, 6] */;
+
+// Sort array
+arrow::compute::SortOptions sort_opts;
+sort_opts.order = arrow::compute::SortOrder::Ascending;
+
+ARROW_ASSIGN_OR_RAISE(auto sorted,
+    arrow::compute::CallFunction(
+        "sort_indices", {array}, &sort_opts));
+// Result: [1, 3, 6, 0, 2, 4, 7, 5] (indices)
+
+// Get sorted values
+ARROW_ASSIGN_OR_RAISE(auto sorted_values,
+    arrow::compute::Take(array, sorted));
+// Result: [1, 1, 2, 3, 4, 5, 6, 9]
+```
+
+## Type Conversions
+
+Cast between data types:
+
+```cpp
+#include <arrow/compute/cast.h>
+
+auto int_array = /* [1, 2, 3, 4, 5] */;
+
+// Cast to different type
+arrow::compute::CastOptions cast_opts;
+cast_opts.to_type = arrow::float64();
+
+ARROW_ASSIGN_OR_RAISE(auto float_array,
+    arrow::compute::Cast(int_array, cast_opts));
+// Result: [1.0, 2.0, 3.0, 4.0, 5.0]
+
+// Cast with error handling
+cast_opts.allow_int_overflow = false;
+cast_opts.allow_float_truncate = false;
+
+auto result = arrow::compute::Cast(array, cast_opts);
+if (!result.ok()) {
+    std::cerr << "Cast failed: " << result.status() << std::endl;
+}
+```
+
+## Working with Tables
+
+Apply functions to table columns:
+
+```cpp
+#include <arrow/api.h>
+#include <arrow/compute/api.h>
+
+auto table = /* Table with columns: a, b */;
+
+// Get column as chunked array
+std::shared_ptr<arrow::ChunkedArray> col_a = table->column(0);
+
+// Apply function to column
+ARROW_ASSIGN_OR_RAISE(auto doubled,
+    arrow::compute::CallFunction(
+        "multiply",
+        {col_a, arrow::MakeScalar(2)}
+    ));
+
+// Create new table with computed column
+auto doubled_array = doubled.chunked_array();
+ARROW_ASSIGN_OR_RAISE(auto new_table,
+    table->AddColumn(
+        2, 
+        arrow::field("a_doubled", arrow::int64()),
+        doubled_array
+    ));
+```
+
+## Custom Functions (UDFs)
+
+Register custom compute functions:
+
+```cpp
+#include <arrow/compute/api.h>
+#include <arrow/compute/registry.h>
+
+// Define a simple UDF
+arrow::Status MyAddOneKernel(
+    arrow::compute::KernelContext* ctx,
+    const arrow::compute::ExecSpan& batch,
+    arrow::compute::ExecResult* out) {
+    
+    auto values = batch[0].array.GetValues<int64_t>(1);
+    auto out_values = out->array_data()->GetMutableValues<int64_t>(1);
+    
+    for (int64_t i = 0; i < batch.length; i++) {
+        out_values[i] = values[i] + 1;
+    }
+    
+    return arrow::Status::OK();
+}
+
+// Register function
+auto func = std::make_shared<arrow::compute::ScalarFunction>(
+    "my_add_one",
+    arrow::compute::Arity::Unary(),
+    arrow::compute::FunctionDoc{});
+
+arrow::compute::ScalarKernel kernel;
+kernel.exec = MyAddOneKernel;
+kernel.signature = arrow::compute::KernelSignature::Make(
+    {arrow::int64()}, arrow::int64());
+
+ARROW_RETURN_NOT_OK(func->AddKernel(kernel));
+ARROW_RETURN_NOT_OK(
+    arrow::compute::GetFunctionRegistry()->AddFunction(func));
+
+// Use custom function
+ARROW_ASSIGN_OR_RAISE(auto result,
+    arrow::compute::CallFunction("my_add_one", {array}));
+```
+
+## Best Practices
+
+1. **Initialize once**: Call `arrow::compute::Initialize()` at program startup
+2. **Batch operations**: Process large arrays instead of individual values
+3. **Reuse options**: Create option objects once for repeated calls
+4. **Check compatibility**: Verify input types match function requirements
+5. **Handle errors**: Always check `Result<T>` return values
+6. **Use direct APIs**: When available, direct function calls are more type-safe than `CallFunction`
+7. **Leverage SIMD**: Arrow's compute functions automatically use SIMD when beneficial
+
+<Tip>
+For complex data transformations, consider using [Acero](/cpp/acero) which can optimize multi-step operations and handle streaming data efficiently.
+</Tip>

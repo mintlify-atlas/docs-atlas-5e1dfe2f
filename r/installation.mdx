@@ -1,0 +1,336 @@
+---
+title: "Installation and Setup"
+description: "Install the arrow R package on Windows, macOS, and Linux with options for binary and source installations"
+---
+
+In most cases, installing arrow is straightforward. However, understanding the installation options can help you get the best performance and enable all features.
+
+## Quick Install
+
+For most users on Windows or macOS, installation is simple:
+
+```r
+install.packages("arrow")
+```
+
+This downloads a precompiled binary containing both the R package and the Arrow C++ library (libarrow).
+
+<Note>
+On macOS with Apple Silicon (M1, M2, etc.), ensure you're using R compiled for arm64. Using Intel-compiled R on ARM processors can cause segfaults and crashes.
+</Note>
+
+## Installation Methods
+
+There are several ways to install arrow, depending on your operating system and requirements:
+
+### Method 1: CRAN Binary (Windows/macOS)
+
+The simplest method, suitable for most users:
+
+```r
+install.packages("arrow")
+```
+
+**Features included:**
+- Parquet support
+- Feather/Arrow IPC support  
+- CSV reading/writing
+- Amazon S3 support
+- Dataset functionality
+
+**Not included in CRAN builds:**
+- Google Cloud Storage (GCS) support
+- Some optional compression algorithms
+
+### Method 2: R-Universe Binary (All Platforms)
+
+R-Universe provides pre-compiled binaries for Linux as well:
+
+```r
+install.packages(
+  "arrow",
+  repos = c("https://apache.r-universe.dev", "https://cloud.r-project.org")
+)
+```
+
+### Method 3: Conda
+
+If you use conda to manage your R environment:
+
+```bash
+conda config --set channel_priority strict
+conda install -c conda-forge r-arrow
+```
+
+## Linux Installation
+
+Linux installation requires more attention because CRAN doesn't host R package binaries for Linux.
+
+### Option A: RSPM Binary (Recommended)
+
+RStudio Package Manager hosts Linux binaries:
+
+```r
+# For Ubuntu 20.04 (Focal)
+options(
+  HTTPUserAgent = sprintf(
+    "R/%s R (%s)",
+    getRversion(),
+    paste(getRversion(), R.version["platform"], 
+          R.version["arch"], R.version["os"])
+  )
+)
+
+install.packages(
+  "arrow",
+  repos = "https://packagemanager.rstudio.com/all/__linux__/focal/latest"
+)
+```
+
+Visit [RSPM](https://packagemanager.rstudio.com/client/#/repos/1/overview) to find the URL for your Linux distribution.
+
+### Option B: Auto-Download C++ Binary
+
+Let the installer download a prebuilt libarrow binary:
+
+```r
+Sys.setenv("NOT_CRAN" = "true")
+install.packages("arrow")
+```
+
+This installs the R source package but downloads a pre-compiled C++ library, providing:
+- Much faster installation than building from source
+- Full features including S3 and GCS support (if system dependencies are met)
+
+<Tip>
+Setting `NOT_CRAN=true` enables more features and uses binary C++ libraries when available, providing the best experience for development and interactive use.
+</Tip>
+
+### System Dependencies for S3/GCS
+
+To use S3 and GCS features, install these system libraries:
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get install -y libcurl4-openssl-dev libssl-dev
+```
+
+**RHEL/CentOS:**
+```bash
+sudo yum install -y libcurl-devel openssl-devel
+```
+
+### Option C: Build from Source
+
+Building both R and C++ from source gives full control but takes longer:
+
+```r
+# Minimal build (fastest, fewer features)
+Sys.setenv("LIBARROW_BINARY" = FALSE, "LIBARROW_MINIMAL" = TRUE)
+install.packages("arrow")
+
+# Full-featured build (slower, all features)
+Sys.setenv("LIBARROW_BINARY" = FALSE, "LIBARROW_MINIMAL" = FALSE)
+install.packages("arrow")
+```
+
+<Note>
+As of arrow 23.0.0, building from source requires a C++20 compiler. For gcc, this means version 10 or newer. CentOS 7 ships with gcc 4.8 and is not supported.
+</Note>
+
+## Using install_arrow()
+
+The `install_arrow()` function provides a convenient interface for installation:
+
+```r
+# Load the function without installing the package
+source("https://raw.githubusercontent.com/apache/arrow/main/r/R/install-arrow.R")
+
+# Install latest release
+install_arrow()
+
+# Install development version (nightly build)
+install_arrow(nightly = TRUE)
+
+# Verbose output for debugging
+install_arrow(verbose = TRUE)
+```
+
+**Advantages:**
+- Automatically handles C++ dependencies
+- No need to set environment variables manually
+- Useful for upgrading or fixing installation issues
+
+## Environment Variables
+
+Fine-tune the installation with environment variables:
+
+### Key Variables
+
+| Variable | Description | Default |
+|----------|-------------|:-------:|
+| `NOT_CRAN` | Enable full-featured builds and binary downloads | `FALSE` |
+| `LIBARROW_BINARY` | Try to download pre-built C++ library | (unset) |
+| `LIBARROW_MINIMAL` | Build minimal or full-featured version | (unset) |
+| `LIBARROW_BUILD` | Allow building C++ from source | `TRUE` |
+| `ARROW_R_DEV` | Verbose output for debugging | `FALSE` |
+| `ARROW_S3` | Enable S3 support when building from source | `OFF` |
+| `ARROW_GCS` | Enable GCS support when building from source | `OFF` |
+
+### Example Configurations
+
+**Development setup (maximum features):**
+```r
+Sys.setenv(
+  "NOT_CRAN" = "true",
+  "ARROW_R_DEV" = "true"
+)
+install.packages("arrow")
+```
+
+**Prevent source builds (binary only):**
+```r
+Sys.setenv("LIBARROW_BUILD" = FALSE)
+install.packages("arrow")
+```
+
+**Force full source build with S3:**
+```r
+Sys.setenv(
+  "LIBARROW_BINARY" = FALSE,
+  "ARROW_S3" = "ON"
+)
+install.packages("arrow")
+```
+
+## Offline Installation
+
+For systems without internet access during installation:
+
+### Step 1: On a Connected Machine
+
+```r
+# Load the helper function
+source("https://raw.githubusercontent.com/apache/arrow/main/r/R/install-arrow.R")
+
+# Create package bundle with all dependencies
+create_package_with_all_dependencies("arrow_offline.tar.gz")
+
+# Transfer arrow_offline.tar.gz to offline machine
+```
+
+### Step 2: On the Offline Machine
+
+```r
+install.packages(
+  "arrow_offline.tar.gz",
+  dependencies = c("Depends", "Imports", "LinkingTo"),
+  type = "source"
+)
+```
+
+<Note>
+The offline machine needs cmake to build from source. Binary packages from RSPM or R-Universe don't require this function.
+</Note>
+
+## Verifying Installation
+
+After installation, verify that arrow is working correctly:
+
+```r
+library(arrow)
+
+# Check version
+package_version("arrow")
+
+# Check available features
+arrow_info()$capabilities
+```
+
+Key capabilities to check:
+- `parquet`: Reading/writing Parquet files
+- `dataset`: Multi-file dataset support
+- `s3`: Amazon S3 connectivity
+- `gcs`: Google Cloud Storage connectivity
+- `json`: JSON file reading
+
+## Troubleshooting
+
+### Binary Installation Failed
+
+If you see "undefined symbols" errors with binaries:
+
+```r
+# Force source build to match compiler settings
+Sys.setenv("LIBARROW_BINARY" = FALSE)
+install.packages("arrow")
+```
+
+### Version Mismatch with System Libraries
+
+If you have system-installed Arrow libraries with different versions:
+
+```r
+# Ignore system libraries
+Sys.setenv("ARROW_USE_PKG_CONFIG" = FALSE)
+install.packages("arrow")
+```
+
+### Build Failed
+
+For detailed error messages:
+
+```r
+Sys.setenv("ARROW_R_DEV" = TRUE)
+install.packages("arrow")
+
+# Check the output carefully and report issues at:
+# https://github.com/apache/arrow/issues
+```
+
+### Save Build Logs
+
+```r
+Sys.setenv("LIBARROW_DEBUG_DIR" = "/absolute/path/to/logs")
+install.packages("arrow")
+```
+
+## Platform-Specific Notes
+
+### Windows
+
+- Requires R 4.3+ for source builds (due to C++20 requirement)
+- R 4.2 has partial C++20 support and might work with special configuration
+- Binary installation is recommended
+
+### macOS
+
+- Apple Silicon users: Use R built for arm64
+- Intel Mac users: Use R built for x86_64
+- Mixing architectures causes crashes
+
+### Linux
+
+- **Ubuntu/Debian**: Well supported with RSPM binaries
+- **RHEL/CentOS 8+**: Supported with gcc 10+
+- **CentOS 7**: Not supported (gcc 4.8 is too old)
+- **Arch/Fedora**: Supported with source builds
+
+## Next Steps
+
+Once arrow is installed, explore these features:
+
+<CardGroup cols={2}>
+  <Card title="Read and Write Files" icon="file" href="/r/reading-writing">
+    Work with Parquet, CSV, and Arrow files
+  </Card>
+  <Card title="dplyr Integration" icon="code" href="/r/data-wrangling">
+    Analyze data with familiar dplyr syntax
+  </Card>
+</CardGroup>
+
+## Additional Resources
+
+- [Installation on Linux (detailed guide)](https://arrow.apache.org/docs/r/articles/install.html)
+- [Installing Nightly Builds](https://arrow.apache.org/docs/r/articles/install_nightly.html)
+- [Developer Guide](https://arrow.apache.org/docs/r/articles/developing.html)

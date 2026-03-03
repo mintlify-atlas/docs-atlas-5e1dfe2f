@@ -1,0 +1,373 @@
+---
+title: "External Language Implementations"
+description: "Arrow implementations maintained in separate repositories across multiple programming languages"
+---
+
+## Overview
+
+Apache Arrow provides official implementations for numerous programming languages. While some implementations (like C++, Python, and R) are maintained in the main Arrow repository, many others are developed in dedicated repositories to better serve their language ecosystems.
+
+## Language Implementations
+
+### Go
+
+<Card title="Apache Arrow for Go" icon="golang" href="https://github.com/apache/arrow-go">
+  Pure Go implementation with native Go idioms and interfaces
+</Card>
+
+**When to use Go:**
+- Building high-performance microservices and APIs
+- Creating command-line tools with Arrow data support
+- Integrating with existing Go codebases
+- Leveraging Go's concurrency primitives for parallel data processing
+
+**Key Features:**
+- Zero-copy reads and writes
+- Native Go types and interfaces
+- Full support for Arrow Flight RPC
+- Parquet file format support
+- Memory-mapped file I/O
+
+**Installation:**
+```bash
+go get github.com/apache/arrow/go/v15/arrow
+```
+
+**Basic Example:**
+```go
+import (
+    "github.com/apache/arrow/go/v15/arrow"
+    "github.com/apache/arrow/go/v15/arrow/array"
+    "github.com/apache/arrow/go/v15/arrow/memory"
+)
+
+pool := memory.NewGoAllocator()
+builder := array.NewInt32Builder(pool)
+defer builder.Release()
+
+builder.AppendValues([]int32{1, 2, 3, 4, 5}, nil)
+arr := builder.NewArray()
+defer arr.Release()
+```
+
+---
+
+### Java
+
+<Card title="Apache Arrow for Java" icon="java" href="https://github.com/apache/arrow-java">
+  Full-featured implementation for JVM languages
+</Card>
+
+**When to use Java:**
+- Building enterprise data processing applications
+- Integrating with big data frameworks (Spark, Flink, etc.)
+- Developing data-intensive JVM applications
+- Working with existing Java data infrastructure
+
+**Key Features:**
+- Integration with JDBC and database systems
+- Arrow Flight RPC for distributed computing
+- Efficient off-heap memory management
+- Parquet, ORC, and Avro format support
+- Support for Kotlin, Scala, and other JVM languages
+
+**Installation (Maven):**
+```xml
+<dependency>
+  <groupId>org.apache.arrow</groupId>
+  <artifactId>arrow-vector</artifactId>
+  <version>15.0.0</version>
+</dependency>
+```
+
+**Basic Example:**
+```java
+import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.RootAllocator;
+import org.apache.arrow.vector.IntVector;
+
+try (BufferAllocator allocator = new RootAllocator()) {
+    IntVector vector = new IntVector("intVector", allocator);
+    vector.allocateNew(3);
+    vector.set(0, 1);
+    vector.set(1, 2);
+    vector.set(2, 3);
+    vector.setValueCount(3);
+}
+```
+
+---
+
+### JavaScript
+
+<Card title="Apache Arrow for JavaScript" icon="js" href="https://github.com/apache/arrow-js">
+  Efficient columnar data for web browsers and Node.js
+</Card>
+
+**When to use JavaScript:**
+- Building data visualization dashboards in the browser
+- Processing large datasets client-side
+- Creating Node.js data processing pipelines
+- Real-time data streaming applications
+
+**Key Features:**
+- Zero-copy reads from Arrow IPC format
+- Works in browsers and Node.js
+- TypeScript support with full type definitions
+- Integration with popular visualization libraries
+- Efficient predicate pushdown and filtering
+
+**Installation:**
+```bash
+npm install apache-arrow
+```
+
+**Basic Example:**
+```javascript
+import { tableFromArrays } from 'apache-arrow';
+
+const table = tableFromArrays({
+  id: [1, 2, 3, 4, 5],
+  name: ['Alice', 'Bob', 'Charlie', 'David', 'Eve'],
+  age: [25, 30, 35, 40, 45]
+});
+
+for (const row of table) {
+  console.log(row.toJSON());
+}
+```
+
+---
+
+### Rust
+
+<Card title="Apache Arrow for Rust" icon="rust" href="https://github.com/apache/arrow-rs">
+  Memory-safe, high-performance Arrow implementation
+</Card>
+
+**When to use Rust:**
+- Building high-performance data processing systems
+- Creating systems with strict safety and reliability requirements
+- Developing native libraries with C/Python bindings
+- Working on embedded or resource-constrained systems
+
+**Key Features:**
+- Memory safety without garbage collection
+- Zero-cost abstractions
+- Full DataFusion query engine integration
+- Parquet and other format readers/writers
+- Async I/O support
+
+**Installation:**
+```toml
+[dependencies]
+arrow = "50.0"
+```
+
+**Basic Example:**
+```rust
+use arrow::array::{Int32Array, StringArray};
+use arrow::datatypes::{DataType, Field, Schema};
+use arrow::record_batch::RecordBatch;
+use std::sync::Arc;
+
+let schema = Schema::new(vec![
+    Field::new("id", DataType::Int32, false),
+    Field::new("name", DataType::Utf8, false),
+]);
+
+let id_array = Int32Array::from(vec![1, 2, 3]);
+let name_array = StringArray::from(vec!["Alice", "Bob", "Charlie"]);
+
+let batch = RecordBatch::try_new(
+    Arc::new(schema),
+    vec![Arc::new(id_array), Arc::new(name_array)],
+)?;
+```
+
+---
+
+### .NET
+
+<Card title="Apache Arrow for .NET" icon="microsoft" href="https://github.com/apache/arrow-dotnet">
+  C# implementation for the .NET ecosystem
+</Card>
+
+**When to use .NET:**
+- Building Windows desktop applications
+- Creating ASP.NET web services
+- Integrating with Microsoft Azure services
+- Working with existing C# codebases
+
+**Key Features:**
+- Full async/await support
+- Integration with .NET data types
+- Arrow Flight RPC support
+- Memory-efficient data structures
+- Cross-platform compatibility
+
+**Installation:**
+```bash
+dotnet add package Apache.Arrow
+```
+
+**Basic Example:**
+```csharp
+using Apache.Arrow;
+using Apache.Arrow.Types;
+
+var field = new Field("Integers", Int32Type.Default, nullable: false);
+var schema = new Schema(new[] { field }, null);
+
+var builder = new Int32Array.Builder();
+builder.AppendRange(new[] { 1, 2, 3, 4, 5 });
+var array = builder.Build();
+```
+
+---
+
+### Julia
+
+<Card title="Apache Arrow for Julia" icon="julia" href="https://github.com/apache/arrow-julia">
+  Native Julia implementation for scientific computing
+</Card>
+
+**When to use Julia:**
+- Scientific and numerical computing applications
+- Statistical analysis and data science workflows
+- High-performance mathematical computations
+- Research and academic projects
+
+**Key Features:**
+- Native Julia type integration
+- Zero-copy data access
+- Integration with DataFrames.jl
+- Efficient serialization and deserialization
+
+**Installation:**
+```julia
+using Pkg
+Pkg.add("Arrow")
+```
+
+**Basic Example:**
+```julia
+using Arrow
+
+table = (col1=[1, 2, 3], col2=["a", "b", "c"])
+Arrow.write("data.arrow", table)
+
+data = Arrow.Table("data.arrow")
+```
+
+---
+
+### Swift
+
+<Card title="Apache Arrow for Swift" icon="apple" href="https://github.com/apache/arrow-swift">
+  Swift implementation for iOS and macOS development
+</Card>
+
+**When to use Swift:**
+- Building iOS and macOS applications
+- Creating Apple ecosystem data tools
+- Mobile data processing applications
+- Native Apple platform integration
+
+**Key Features:**
+- Native Swift types and protocols
+- Integration with Apple frameworks
+- Memory-efficient data structures
+- Cross-platform support (iOS, macOS, Linux)
+
+**Installation:**
+```swift
+dependencies: [
+    .package(url: "https://github.com/apache/arrow-swift.git", from: "0.1.0")
+]
+```
+
+---
+
+## Choosing the Right Implementation
+
+<AccordionGroup>
+  <Accordion title="Performance-Critical Applications">
+    Consider **Rust** or **C++** for maximum performance, **Go** for balanced performance and productivity, or **Java** for JVM ecosystem integration.
+  </Accordion>
+  
+  <Accordion title="Web and Browser Applications">
+    Use **JavaScript** for client-side processing and visualization, or **Python** (via PyArrow + WASM) for server-side web applications.
+  </Accordion>
+  
+  <Accordion title="Data Science and Analytics">
+    **Python** (PyArrow) is the most popular choice, **R** for statistics, **Julia** for numerical computing.
+  </Accordion>
+  
+  <Accordion title="Enterprise Applications">
+    **Java** for big data frameworks, **.NET** for Windows/Azure environments, **Go** for microservices architectures.
+  </Accordion>
+  
+  <Accordion title="Mobile Development">
+    **Swift** for iOS/macOS, **Java** for Android, or use language bindings via **C GLib**.
+  </Accordion>
+</AccordionGroup>
+
+## Cross-Language Compatibility
+
+All Arrow implementations share the same columnar memory format, enabling zero-copy data sharing across languages:
+
+<Steps>
+  <Step title="Write data in one language">
+    Create Arrow data structures in any language and serialize to IPC format
+  </Step>
+  <Step title="Transfer via shared memory or network">
+    Use Arrow Flight, IPC streams, or memory-mapped files
+  </Step>
+  <Step title="Read data in another language">
+    Deserialize with zero-copy in the target language
+  </Step>
+</Steps>
+
+## Additional Implementations
+
+Beyond the official implementations, the Arrow community maintains bindings for:
+
+- **MATLAB**: Available in the main repository
+- **Lua**: Via C GLib bindings with LGI
+- **PHP**: Community-maintained bindings
+- **Perl**: Community-maintained bindings
+
+For language-specific binding creation, see the [C GLib bindings documentation](/languages/c-glib).
+
+## Integration with Arrow Database Connectivity (ADBC)
+
+Many language implementations also support ADBC for database access:
+
+<CardGroup cols={2}>
+  <Card title="ADBC for Go" href="https://github.com/apache/arrow-adbc">
+    Arrow-native database drivers for Go
+  </Card>
+  <Card title="ADBC for Java" href="https://github.com/apache/arrow-adbc">
+    JDBC-compatible Arrow database access
+  </Card>
+  <Card title="ADBC for Python" href="https://github.com/apache/arrow-adbc">
+    DB-API compatible database drivers
+  </Card>
+  <Card title="ADBC for C/C++" href="https://github.com/apache/arrow-adbc">
+    Native database connectivity layer
+  </Card>
+</CardGroup>
+
+## Contributing
+
+Each implementation welcomes contributions. Check the individual repository's CONTRIBUTING.md for guidelines:
+
+- Report issues on GitHub
+- Submit pull requests
+- Join the dev mailing list: [dev@arrow.apache.org](mailto:dev@arrow.apache.org)
+- Participate in community discussions
+
+<Card title="Main Arrow Repository" icon="github" href="https://github.com/apache/arrow">
+  View all Arrow projects and repositories
+</Card>

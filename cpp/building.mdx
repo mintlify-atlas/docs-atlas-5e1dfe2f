@@ -1,0 +1,396 @@
+---
+title: Building from Source
+description: Complete guide to building Apache Arrow C++ from source with CMake
+---
+
+This guide covers building the Apache Arrow C++ library from source using CMake. Arrow uses an out-of-source build system for flexibility.
+
+## Prerequisites
+
+### System Requirements
+
+- **C++20-enabled compiler**: GCC 12+, Clang 14+, or MSVC 2019+
+- **CMake**: Version 3.25 or higher
+- **Build system**: Make or Ninja (recommended)
+- **Memory**: At least 1GB RAM (4GB for debug builds, 8GB for full builds)
+
+### Installing Build Tools
+
+<Tabs>
+  <Tab title="Ubuntu/Debian">
+    ```bash
+    sudo apt-get install \
+        build-essential \
+        cmake \
+        ninja-build
+    ```
+  </Tab>
+  
+  <Tab title="Fedora">
+    ```bash
+    sudo dnf install \
+        cmake \
+        gcc \
+        gcc-c++ \
+        ninja-build
+    ```
+  </Tab>
+  
+  <Tab title="Arch Linux">
+    ```bash
+    sudo pacman -S --needed \
+        base-devel \
+        cmake \
+        ninja
+    ```
+  </Tab>
+  
+  <Tab title="macOS">
+    ```bash
+    # Clone Arrow repository first
+    git clone https://github.com/apache/arrow.git
+    cd arrow
+    
+    # Install dependencies with Homebrew
+    brew update && brew bundle --file=cpp/Brewfile
+    ```
+  </Tab>
+  
+  <Tab title="Windows (MSYS2)">
+    ```bash
+    pacman --sync --refresh --noconfirm \
+        git \
+        mingw-w64-${MSYSTEM_CARCH}-cmake \
+        mingw-w64-${MSYSTEM_CARCH}-gcc \
+        mingw-w64-${MSYSTEM_CARCH}-ninja
+    ```
+  </Tab>
+</Tabs>
+
+## Getting the Source
+
+```bash
+git clone https://github.com/apache/arrow.git
+cd arrow/cpp
+```
+
+## Build Configuration
+
+### Using CMake Presets
+
+Arrow provides convenient CMake presets for common configurations. List available presets:
+
+```bash
+cmake --list-presets
+```
+
+Available presets include:
+- `ninja-debug-minimal` - Debug build without optional components
+- `ninja-debug-basic` - Debug build with tests and reduced dependencies
+- `ninja-debug` - Full debug build with tests
+- `ninja-release-minimal` - Minimal release build
+- `ninja-release` - Full release build
+
+Inspect a preset's configuration:
+
+```bash
+cmake -N --preset ninja-debug-minimal
+```
+
+Build using a preset:
+
+```bash
+mkdir build && cd build
+cmake .. --preset ninja-debug-minimal
+cmake --build .
+```
+
+### Manual Configuration
+
+For more control, configure CMake manually:
+
+<Tabs>
+  <Tab title="Release Build">
+    ```bash
+    mkdir build-release && cd build-release
+    
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DARROW_BUILD_TESTS=OFF \
+        -DARROW_COMPUTE=ON \
+        -DARROW_CSV=ON \
+        -DARROW_DATASET=ON \
+        -DARROW_FILESYSTEM=ON \
+        -DARROW_PARQUET=ON
+    
+    cmake --build . --parallel $(nproc)
+    ```
+  </Tab>
+  
+  <Tab title="Debug Build">
+    ```bash
+    mkdir build-debug && cd build-debug
+    
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Debug \
+        -DARROW_BUILD_TESTS=ON \
+        -DARROW_COMPUTE=ON \
+        -DARROW_EXTRA_ERROR_CONTEXT=ON
+    
+    cmake --build . --parallel $(nproc)
+    ```
+  </Tab>
+  
+  <Tab title="Minimal Build">
+    ```bash
+    mkdir build-minimal && cd build-minimal
+    
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DARROW_BUILD_STATIC=OFF \
+        -DARROW_BUILD_TESTS=OFF \
+        -DARROW_COMPUTE=OFF \
+        -DARROW_CSV=OFF
+    
+    cmake --build .
+    ```
+  </Tab>
+</Tabs>
+
+## Key Build Options
+
+### Core Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `CMAKE_BUILD_TYPE` | `Release` | Build type: `Debug`, `Release`, `RelWithDebInfo` |
+| `CMAKE_INSTALL_PREFIX` | `/usr/local` | Installation directory |
+| `ARROW_BUILD_STATIC` | `ON` | Build static libraries |
+| `ARROW_BUILD_SHARED` | `ON` | Build shared libraries |
+| `ARROW_BUILD_TESTS` | `OFF` | Build unit tests |
+| `ARROW_BUILD_BENCHMARKS` | `OFF` | Build benchmarks |
+
+### Component Options
+
+| Option | Description |
+|--------|-------------|
+| `ARROW_COMPUTE` | Compute functions and kernels |
+| `ARROW_CSV` | CSV reader/writer |
+| `ARROW_DATASET` | Dataset API for reading partitioned data |
+| `ARROW_FILESYSTEM` | Filesystem abstraction (S3, GCS, HDFS) |
+| `ARROW_FLIGHT` | Arrow Flight RPC framework |
+| `ARROW_FLIGHT_SQL` | Flight SQL protocol |
+| `ARROW_GANDIVA` | LLVM-based expression compiler |
+| `ARROW_IPC` | Inter-process communication |
+| `ARROW_JSON` | JSON reader |
+| `ARROW_ORC` | ORC file format support |
+| `ARROW_PARQUET` | Parquet file format support |
+| `ARROW_ACERO` | Acero streaming execution engine |
+
+### Advanced Options
+
+| Option | Description |
+|--------|-------------|
+| `ARROW_JEMALLOC` | Use jemalloc for memory allocation |
+| `ARROW_MIMALLOC` | Use mimalloc for memory allocation |
+| `ARROW_USE_CCACHE` | Use ccache for faster rebuilds |
+| `ARROW_SIMD_LEVEL` | SIMD optimization level (`NONE`, `SSE4_2`, `AVX2`, `AVX512`) |
+| `ARROW_RUNTIME_SIMD_LEVEL` | Runtime SIMD dispatch level |
+
+<Tip>
+Enable `ARROW_JEMALLOC` or `ARROW_MIMALLOC` for significantly better memory allocation performance in production builds.
+</Tip>
+
+## Building with Dependencies
+
+### Bundled vs. System Dependencies
+
+Arrow can either bundle dependencies or use system-installed versions:
+
+```bash
+# Use system dependencies (recommended for package maintainers)
+cmake .. \
+    -DARROW_DEPENDENCY_SOURCE=SYSTEM \
+    -DARROW_PARQUET=ON
+
+# Bundle dependencies (recommended for development)
+cmake .. \
+    -DARROW_DEPENDENCY_SOURCE=BUNDLED \
+    -DARROW_PARQUET=ON
+
+# Auto-detect (default)
+cmake .. \
+    -DARROW_DEPENDENCY_SOURCE=AUTO \
+    -DARROW_PARQUET=ON
+```
+
+### Common Dependencies
+
+- **boost** - Required by some components
+- **brotli, lz4, snappy, zstd** - Compression libraries
+- **gflags, glog, gtest** - Development utilities
+- **protobuf, grpc** - Required for Arrow Flight
+- **thrift** - Required for Parquet
+- **re2, utf8proc** - String processing
+
+## Installation
+
+Install Arrow after building:
+
+```bash
+# Install to default location (/usr/local)
+sudo cmake --install .
+
+# Install to custom location
+cmake --install . --prefix=/opt/arrow
+```
+
+### Setting Installation Path
+
+Specify installation prefix during configuration:
+
+```bash
+cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/.local
+cmake --build .
+cmake --install .
+```
+
+Update your environment:
+
+```bash
+export PATH=$HOME/.local/bin:$PATH
+export LD_LIBRARY_PATH=$HOME/.local/lib:$LD_LIBRARY_PATH
+export CMAKE_PREFIX_PATH=$HOME/.local:$CMAKE_PREFIX_PATH
+```
+
+## Using Arrow in Your Project
+
+### CMake Integration
+
+Create a `CMakeLists.txt` file:
+
+```cmake
+cmake_minimum_required(VERSION 3.25)
+project(MyArrowApp)
+
+# Find Arrow
+find_package(Arrow REQUIRED)
+
+# Create executable
+add_executable(my_app main.cpp)
+
+# Link Arrow libraries
+target_link_libraries(my_app PRIVATE Arrow::arrow_shared)
+
+# Optional: Link additional components
+find_package(ArrowCompute REQUIRED)
+find_package(Parquet REQUIRED)
+target_link_libraries(my_app PRIVATE 
+    ArrowCompute::arrow_compute_shared
+    Parquet::parquet_shared)
+```
+
+<Note>
+Use `Arrow::arrow_shared` for shared libraries (recommended) or `Arrow::arrow_static` for static linking.
+</Note>
+
+### Available Packages
+
+Arrow provides separate packages for each component:
+
+- `Arrow` - Core library
+- `ArrowCompute` - Compute functions
+- `ArrowDataset` - Dataset API
+- `ArrowAcero` - Acero execution engine
+- `ArrowFlight` - Flight RPC
+- `ArrowFlightSql` - Flight SQL
+- `Parquet` - Parquet format
+- `Gandiva` - Expression compiler
+
+Each follows the naming pattern:
+- find_package: `find_package(PackageName REQUIRED)`
+- Shared target: `PackageName::package_name_shared`
+- Static target: `PackageName::package_name_static`
+
+### pkg-config
+
+Alternatively, use pkg-config:
+
+```bash
+# Get compiler flags
+pkg-config --cflags --libs arrow
+
+# For static linking
+pkg-config --cflags --libs --static arrow
+```
+
+Makefile example:
+
+```makefile
+my_app: main.cpp
+	$(CXX) -o $@ $(CXXFLAGS) $< $$(pkg-config --cflags --libs arrow)
+```
+
+## Testing
+
+Run tests after building:
+
+```bash
+# Run all tests
+ctest
+
+# Run tests in parallel
+ctest -j$(nproc)
+
+# Run specific test
+ctest -R arrow-array-test
+
+# Verbose output
+ctest -V
+```
+
+Or run test executables directly:
+
+```bash
+# Run specific test executable
+./debug/arrow-array-test
+
+# Run with Google Test filters
+./debug/arrow-array-test --gtest_filter=TestInt64Builder*
+```
+
+## Troubleshooting
+
+### Out of Memory
+
+Reduce parallel jobs:
+
+```bash
+cmake --build . --parallel 2
+```
+
+Or build specific targets:
+
+```bash
+cmake --build . --target arrow
+```
+
+### Missing Dependencies
+
+Use bundled dependencies:
+
+```bash
+cmake .. -DARROW_DEPENDENCY_SOURCE=BUNDLED
+```
+
+### CMake Can't Find Arrow
+
+Set `CMAKE_PREFIX_PATH`:
+
+```bash
+cmake .. -DCMAKE_PREFIX_PATH=/path/to/arrow/install
+```
+
+<Tip>
+For faster incremental builds, enable ccache: `-DARROW_USE_CCACHE=ON`
+</Tip>

@@ -1,0 +1,591 @@
+---
+title: Working with Tables and Arrays
+description: Learn how to create and manipulate Arrow tables and arrays in Python
+---
+
+## Arrays
+
+Arrays are the fundamental one-dimensional data structure in PyArrow. They represent a contiguous sequence of values with a single data type.
+
+### Creating Arrays
+
+```python
+import pyarrow as pa
+
+# From Python list
+array = pa.array([1, 2, 3, 4, 5])
+print(array.type)  # int64
+
+# With explicit type
+array = pa.array([1, 2, 3], type=pa.int32())
+array = pa.array(['a', 'b', 'c'], type=pa.string())
+
+# With null values
+array = pa.array([1, None, 3, None, 5])
+print(f"Null count: {array.null_count}")  # 2
+
+# From NumPy array
+import numpy as np
+np_array = np.array([1.0, 2.0, 3.0])
+arrow_array = pa.array(np_array)
+```
+
+### Array Types
+
+<Tabs>
+  <Tab title="Numeric Arrays">
+    ```python
+    import pyarrow as pa
+
+    # Integer arrays
+    int_array = pa.array([1, 2, 3], type=pa.int64())
+    uint_array = pa.array([1, 2, 3], type=pa.uint32())
+
+    # Floating point arrays
+    float_array = pa.array([1.5, 2.7, 3.9], type=pa.float64())
+
+    # Boolean arrays
+    bool_array = pa.array([True, False, True], type=pa.bool_())
+
+    # Decimal arrays for precise arithmetic
+    decimal_array = pa.array([1.23, 4.56], type=pa.decimal128(10, 2))
+    ```
+  </Tab>
+
+  <Tab title="String and Binary">
+    ```python
+    import pyarrow as pa
+
+    # String arrays (UTF-8)
+    string_array = pa.array(['hello', 'world', 'arrow'])
+    print(string_array.type)  # string
+
+    # Binary arrays
+    binary_array = pa.array([b'bytes', b'data'], type=pa.binary())
+
+    # Large strings for > 2GB data
+    large_string_array = pa.array(
+        ['large', 'strings'],
+        type=pa.large_string()
+    )
+    ```
+  </Tab>
+
+  <Tab title="Temporal Arrays">
+    ```python
+    import pyarrow as pa
+    from datetime import datetime, date, timedelta
+
+    # Timestamp arrays
+    timestamps = pa.array(
+        [datetime(2024, 1, 1), datetime(2024, 1, 2)],
+        type=pa.timestamp('us')
+    )
+
+    # With timezone
+    timestamps_tz = pa.array(
+        [datetime(2024, 1, 1), datetime(2024, 1, 2)],
+        type=pa.timestamp('us', tz='UTC')
+    )
+
+    # Date arrays
+    dates = pa.array(
+        [date(2024, 1, 1), date(2024, 1, 2)],
+        type=pa.date32()
+    )
+
+    # Duration arrays
+    durations = pa.array(
+        [timedelta(days=1), timedelta(hours=2)],
+        type=pa.duration('s')
+    )
+    ```
+  </Tab>
+
+  <Tab title="Nested Arrays">
+    ```python
+    import pyarrow as pa
+
+    # List arrays
+    list_array = pa.array(
+        [[1, 2], [3, 4, 5], [6]],
+        type=pa.list_(pa.int64())
+    )
+
+    # Struct arrays (like records)
+    struct_array = pa.array(
+        [{'x': 1, 'y': 2.0}, {'x': 3, 'y': 4.0}],
+        type=pa.struct([('x', pa.int64()), ('y', pa.float64())])
+    )
+
+    # Map arrays
+    map_array = pa.array(
+        [{'a': 1, 'b': 2}, {'c': 3}],
+        type=pa.map_(pa.string(), pa.int64())
+    )
+    ```
+  </Tab>
+</Tabs>
+
+### Array Operations
+
+```python
+import pyarrow as pa
+
+array = pa.array([1, 2, 3, 4, 5])
+
+# Access elements
+print(array[0])  # <pyarrow.Int64Scalar: 1>
+print(array[0].as_py())  # 1 (convert to Python)
+
+# Slicing
+subarray = array[1:4]  # Elements 1, 2, 3
+print(subarray.to_pylist())  # [2, 3, 4]
+
+# Length and properties
+print(len(array))  # 5
+print(array.type)  # int64
+print(array.null_count)  # 0
+
+# Convert to Python list
+python_list = array.to_pylist()
+
+# Convert to NumPy array
+import numpy as np
+np_array = array.to_numpy()
+```
+
+### Chunked Arrays
+
+Chunked arrays are sequences of arrays with the same type:
+
+```python
+import pyarrow as pa
+
+# Create chunked array from multiple arrays
+chunked = pa.chunked_array([
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9]
+])
+
+print(f"Number of chunks: {len(chunked.chunks)}")
+print(f"Total length: {len(chunked)}")
+
+# Access individual chunks
+for i, chunk in enumerate(chunked.chunks):
+    print(f"Chunk {i}: {chunk.to_pylist()}")
+
+# Combine chunks into single array
+combined = chunked.combine_chunks()
+print(combined.to_pylist())  # [1, 2, 3, 4, 5, 6, 7, 8, 9]
+```
+
+<Note>
+  Chunked arrays are useful when data comes from multiple sources or when processing data in batches.
+</Note>
+
+## Tables
+
+Tables are two-dimensional datasets with named columns, similar to pandas DataFrames or SQL tables.
+
+### Creating Tables
+
+<Tabs>
+  <Tab title="From Dictionary">
+    ```python
+    import pyarrow as pa
+
+    # Create table from Python dictionary
+    table = pa.table({
+        'id': [1, 2, 3],
+        'name': ['Alice', 'Bob', 'Charlie'],
+        'score': [95.5, 87.3, 92.1]
+    })
+
+    print(table)
+    # pyarrow.Table
+    # id: int64
+    # name: string
+    # score: double
+    ```
+  </Tab>
+
+  <Tab title="From Arrays">
+    ```python
+    import pyarrow as pa
+
+    # Create table from arrays with schema
+    schema = pa.schema([
+        ('id', pa.int32()),
+        ('name', pa.string()),
+        ('score', pa.float64())
+    ])
+
+    table = pa.table([
+        pa.array([1, 2, 3], type=pa.int32()),
+        pa.array(['Alice', 'Bob', 'Charlie']),
+        pa.array([95.5, 87.3, 92.1])
+    ], schema=schema)
+    ```
+  </Tab>
+
+  <Tab title="From Pandas">
+    ```python
+    import pyarrow as pa
+    import pandas as pd
+
+    # Create pandas DataFrame
+    df = pd.DataFrame({
+        'id': [1, 2, 3],
+        'name': ['Alice', 'Bob', 'Charlie'],
+        'score': [95.5, 87.3, 92.1]
+    })
+
+    # Convert to Arrow table
+    table = pa.Table.from_pandas(df)
+
+    # Without pandas index
+    table = pa.Table.from_pandas(df, preserve_index=False)
+    ```
+  </Tab>
+
+  <Tab title="From Record Batches">
+    ```python
+    import pyarrow as pa
+
+    # Create record batch
+    batch = pa.record_batch([
+        pa.array([1, 2, 3]),
+        pa.array(['a', 'b', 'c'])
+    ], names=['id', 'value'])
+
+    # Create table from batches
+    table = pa.Table.from_batches([batch])
+    ```
+  </Tab>
+</Tabs>
+
+### Table Operations
+
+```python
+import pyarrow as pa
+
+table = pa.table({
+    'id': [1, 2, 3, 4],
+    'name': ['Alice', 'Bob', 'Charlie', 'David'],
+    'score': [95.5, 87.3, 92.1, 88.9]
+})
+
+# Get column names
+print(table.column_names)  # ['id', 'name', 'score']
+
+# Get schema
+print(table.schema)
+
+# Number of rows and columns
+print(f"Rows: {table.num_rows}, Columns: {table.num_columns}")
+
+# Access columns
+id_column = table['id']
+name_column = table.column('name')  # Alternative syntax
+
+# Access by index
+first_column = table.column(0)
+
+# Get multiple columns
+subtable = table.select(['name', 'score'])
+```
+
+### Modifying Tables
+
+```python
+import pyarrow as pa
+
+table = pa.table({
+    'id': [1, 2, 3],
+    'name': ['Alice', 'Bob', 'Charlie']
+})
+
+# Add a column
+new_table = table.append_column(
+    'score',
+    pa.array([95, 87, 92])
+)
+
+# Add multiple columns
+new_table = table.add_column(
+    0,  # Insert at position 0
+    'index',
+    pa.array([0, 1, 2])
+)
+
+# Remove column
+smaller_table = table.remove_column(1)  # Remove column at index 1
+
+# Rename columns
+renamed_table = table.rename_columns(['user_id', 'user_name'])
+
+# Replace column
+updated_table = table.set_column(
+    1,
+    'name',
+    pa.array(['Alice Smith', 'Bob Jones', 'Charlie Brown'])
+)
+```
+
+<Tip>
+  Tables are immutable. Operations like `append_column` return a new table rather than modifying the existing one.
+</Tip>
+
+### Filtering and Slicing
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+table = pa.table({
+    'id': [1, 2, 3, 4, 5],
+    'score': [95, 87, 92, 88, 91]
+})
+
+# Slice rows
+sliced = table.slice(0, 3)  # First 3 rows
+sliced = table.slice(2)  # From row 2 to end
+
+# Filter using mask
+mask = pc.greater(table['score'], 90)
+filtered = table.filter(mask)
+
+# Filter with expression
+from pyarrow import compute as pc
+filtered = table.filter(
+    pc.and_(
+        pc.greater_equal(table['score'], 85),
+        pc.less(table['score'], 95)
+    )
+)
+```
+
+### Sorting Tables
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+table = pa.table({
+    'name': ['Charlie', 'Alice', 'Bob'],
+    'age': [30, 25, 35],
+    'score': [92, 95, 87]
+})
+
+# Sort by single column
+sorted_table = table.sort_by([('score', 'descending')])
+
+# Sort by multiple columns
+sorted_table = table.sort_by([
+    ('age', 'ascending'),
+    ('score', 'descending')
+])
+
+# Using take and sort_indices for more control
+indices = pc.sort_indices(table['score'], sort_keys='descending')
+sorted_table = table.take(indices)
+```
+
+## Schemas
+
+Schemas define the structure and metadata of tables:
+
+```python
+import pyarrow as pa
+
+# Create schema
+schema = pa.schema([
+    pa.field('id', pa.int32(), nullable=False),
+    pa.field('name', pa.string()),
+    pa.field('timestamp', pa.timestamp('ms', tz='UTC')),
+    pa.field('tags', pa.list_(pa.string())),
+])
+
+print(schema)
+
+# Add metadata to schema
+schema_with_meta = schema.with_metadata({
+    'source': 'user_database',
+    'version': '1.0'
+})
+
+# Access field information
+for field in schema:
+    print(f"{field.name}: {field.type}, nullable={field.nullable}")
+
+# Get specific field
+id_field = schema.field('id')
+print(id_field.metadata)
+
+# Compare schemas
+schema2 = pa.schema([('id', pa.int32()), ('name', pa.string())])
+print(schema.equals(schema2))  # False
+```
+
+### Schema Evolution
+
+```python
+import pyarrow as pa
+
+schema = pa.schema([
+    ('id', pa.int32()),
+    ('name', pa.string())
+])
+
+# Add field
+new_schema = schema.append(pa.field('age', pa.int32()))
+
+# Insert field at position
+new_schema = schema.insert(1, pa.field('email', pa.string()))
+
+# Remove field
+smaller_schema = schema.remove(1)
+
+# Unify multiple schemas
+schemas = [
+    pa.schema([('a', pa.int32()), ('b', pa.string())]),
+    pa.schema([('a', pa.int32()), ('c', pa.float64())])
+]
+unified = pa.unify_schemas(schemas)
+print(unified)  # Contains fields a, b, c
+```
+
+## Record Batches
+
+Record batches are like tables but represent a single contiguous block of data:
+
+```python
+import pyarrow as pa
+
+# Create record batch
+batch = pa.record_batch([
+    pa.array([1, 2, 3]),
+    pa.array(['a', 'b', 'c'])
+], names=['id', 'value'])
+
+print(f"Rows: {batch.num_rows}")
+print(f"Schema: {batch.schema}")
+
+# Access columns
+id_col = batch['id']
+
+# Convert to table
+table = pa.Table.from_batches([batch])
+
+# Convert table to batches
+table = pa.table({'x': [1, 2, 3], 'y': ['a', 'b', 'c']})
+batches = table.to_batches(max_chunksize=2)
+for i, batch in enumerate(batches):
+    print(f"Batch {i}: {batch.num_rows} rows")
+```
+
+## Concatenation
+
+<Tabs>
+  <Tab title="Concatenate Arrays">
+    ```python
+    import pyarrow as pa
+
+    arr1 = pa.array([1, 2, 3])
+    arr2 = pa.array([4, 5, 6])
+
+    # Concatenate arrays
+    result = pa.concat_arrays([arr1, arr2])
+    print(result.to_pylist())  # [1, 2, 3, 4, 5, 6]
+    ```
+  </Tab>
+
+  <Tab title="Concatenate Tables">
+    ```python
+    import pyarrow as pa
+
+    table1 = pa.table({'a': [1, 2], 'b': ['x', 'y']})
+    table2 = pa.table({'a': [3, 4], 'b': ['z', 'w']})
+
+    # Concatenate tables (must have same schema)
+    result = pa.concat_tables([table1, table2])
+    print(result.num_rows)  # 4
+    ```
+  </Tab>
+
+  <Tab title="Concatenate Batches">
+    ```python
+    import pyarrow as pa
+
+    batch1 = pa.record_batch([[1, 2]], names=['a'])
+    batch2 = pa.record_batch([[3, 4]], names=['a'])
+
+    # Concatenate record batches into table
+    table = pa.Table.from_batches([batch1, batch2])
+    print(table.num_rows)  # 4
+    ```
+  </Tab>
+</Tabs>
+
+## Memory and Performance
+
+### Zero-Copy Operations
+
+```python
+import pyarrow as pa
+import numpy as np
+
+# Zero-copy from NumPy (when possible)
+np_array = np.array([1, 2, 3, 4, 5], dtype='int64')
+arrow_array = pa.array(np_array, type=pa.int64())
+
+# Zero-copy to NumPy (when contiguous)
+arrow_array = pa.array([1, 2, 3, 4, 5])
+np_array = arrow_array.to_numpy(zero_copy_only=True)
+```
+
+### Memory Usage
+
+```python
+import pyarrow as pa
+
+table = pa.table({
+    'a': range(1000000),
+    'b': ['text'] * 1000000
+})
+
+# Get memory usage
+print(f"Table size: {table.nbytes} bytes")
+print(f"Total buffer size: {table.get_total_buffer_size()} bytes")
+
+# Per-column memory
+for name in table.column_names:
+    col = table[name]
+    print(f"{name}: {col.nbytes} bytes")
+```
+
+### Efficient Data Transfer
+
+```python
+import pyarrow as pa
+
+table = pa.table({'a': [1, 2, 3]})
+
+# Serialize to bytes (for IPC/network transfer)
+sink = pa.BufferOutputStream()
+with pa.ipc.RecordBatchStreamWriter(sink, table.schema) as writer:
+    writer.write_table(table)
+buf = sink.getvalue()
+
+# Deserialize
+reader = pa.ipc.RecordBatchStreamReader(buf)
+reconstructed = reader.read_all()
+```
+
+## Next Steps
+
+- [Compute Functions](/python/compute) - Perform operations on arrays and tables
+- [Dataset API](/python/dataset) - Work with multi-file datasets
+- [Parquet Files](/python/parquet) - Read and write Parquet format

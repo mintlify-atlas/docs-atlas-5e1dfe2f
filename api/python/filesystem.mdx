@@ -1,0 +1,604 @@
+---
+title: Filesystem API
+description: Apache Arrow filesystem abstraction for local and remote storage
+---
+
+## Overview
+
+The filesystem API provides a unified interface for interacting with various storage systems, including local filesystems, cloud storage (S3, Azure, GCS), and HDFS.
+
+```python
+import pyarrow.fs as fs
+
+# Local filesystem
+local = fs.LocalFileSystem()
+
+# S3 filesystem
+s3 = fs.S3FileSystem(region='us-east-1')
+
+# List files
+file_infos = local.get_file_info(fs.FileSelector('/path/to/dir', recursive=True))
+for info in file_infos:
+    print(info.path, info.type, info.size)
+```
+
+## FileSystem
+
+Base class for all filesystem implementations.
+
+### from_uri()
+
+Create a filesystem from a URI.
+
+```python
+FileSystem.from_uri(uri)
+```
+
+<ParamField path="uri" type="str">
+  URI string (e.g., 's3://bucket/path', 'file:///local/path').
+</ParamField>
+
+<ResponseField name="result" type="tuple of (FileSystem, str)">
+  Tuple of (filesystem, path) where path is the path component of the URI.
+</ResponseField>
+
+### Example
+
+```python
+import pyarrow.fs as fs
+
+# Parse S3 URI
+filesystem, path = fs.FileSystem.from_uri('s3://my-bucket/data/')
+print(type(filesystem))  # S3FileSystem
+print(path)              # 'my-bucket/data/'
+
+# Parse local URI
+filesystem, path = fs.FileSystem.from_uri('file:///home/user/data')
+print(type(filesystem))  # LocalFileSystem
+```
+
+### Methods
+
+#### get_file_info()
+
+Get information about files.
+
+```python
+filesystem.get_file_info(paths_or_selector)
+```
+
+<ParamField path="paths_or_selector" type="str, list of str, or FileSelector">
+  Path(s) to get info for, or a FileSelector for recursive discovery.
+</ParamField>
+
+<ResponseField name="info" type="FileInfo or list of FileInfo">
+  File information object(s).
+</ResponseField>
+
+#### create_dir()
+
+Create a directory.
+
+```python
+filesystem.create_dir(path, recursive=True)
+```
+
+<ParamField path="path" type="str">
+  Directory path to create.
+</ParamField>
+
+<ParamField path="recursive" type="bool" default="True">
+  Create parent directories if needed.
+</ParamField>
+
+#### delete_dir()
+
+Delete a directory and its contents.
+
+```python
+filesystem.delete_dir(path)
+```
+
+<ParamField path="path" type="str">
+  Directory path to delete.
+</ParamField>
+
+#### delete_file()
+
+Delete a file.
+
+```python
+filesystem.delete_file(path)
+```
+
+<ParamField path="path" type="str">
+  File path to delete.
+</ParamField>
+
+#### move()
+
+Move or rename a file/directory.
+
+```python
+filesystem.move(src, dest)
+```
+
+<ParamField path="src" type="str">
+  Source path.
+</ParamField>
+
+<ParamField path="dest" type="str">
+  Destination path.
+</ParamField>
+
+#### copy_file()
+
+Copy a file.
+
+```python
+filesystem.copy_file(src, dest)
+```
+
+<ParamField path="src" type="str">
+  Source file path.
+</ParamField>
+
+<ParamField path="dest" type="str">
+  Destination file path.
+</ParamField>
+
+#### open_input_stream()
+
+Open a file for reading.
+
+```python
+stream = filesystem.open_input_stream('data.parquet')
+data = stream.read()
+stream.close()
+```
+
+<ParamField path="path" type="str">
+  File path to open.
+</ParamField>
+
+<ResponseField name="stream" type="NativeFile">
+  Input stream for reading.
+</ResponseField>
+
+#### open_output_stream()
+
+Open a file for writing.
+
+```python
+stream = filesystem.open_output_stream('output.parquet')
+stream.write(data)
+stream.close()
+```
+
+<ParamField path="path" type="str">
+  File path to write to.
+</ParamField>
+
+<ResponseField name="stream" type="NativeFile">
+  Output stream for writing.
+</ResponseField>
+
+## LocalFileSystem
+
+Filesystem interface for local storage.
+
+```python
+import pyarrow.fs as fs
+
+local_fs = fs.LocalFileSystem()
+
+# List files
+for file_info in local_fs.get_file_info(fs.FileSelector('/path', recursive=True)):
+    print(file_info.path)
+
+# Read file
+with local_fs.open_input_stream('/path/to/file.txt') as f:
+    content = f.read()
+```
+
+### Constructor
+
+```python
+fs.LocalFileSystem(use_mmap=False)
+```
+
+<ParamField path="use_mmap" type="bool" default="False">
+  Use memory mapping when opening files for reading.
+</ParamField>
+
+<ResponseField name="filesystem" type="LocalFileSystem">
+  A local filesystem object.
+</ResponseField>
+
+## S3FileSystem
+
+Filesystem interface for Amazon S3.
+
+```python
+import pyarrow.fs as fs
+
+s3 = fs.S3FileSystem(
+    region='us-east-1',
+    access_key='YOUR_ACCESS_KEY',
+    secret_key='YOUR_SECRET_KEY'
+)
+
+# List files in bucket
+for file_info in s3.get_file_info(fs.FileSelector('my-bucket/', recursive=True)):
+    print(file_info.path)
+
+# Read file from S3
+with s3.open_input_stream('my-bucket/data.parquet') as f:
+    data = f.read()
+```
+
+### Constructor
+
+```python
+fs.S3FileSystem(access_key=None, secret_key=None, session_token=None, 
+                region=None, scheme=None, endpoint_override=None,
+                background_writes=True, default_metadata=None,
+                role_arn=None, session_name=None, external_id=None,
+                load_frequency=900, proxy_options=None)
+```
+
+<ParamField path="access_key" type="str" default="None">
+  AWS access key ID. If not provided, uses AWS credentials from environment or config.
+</ParamField>
+
+<ParamField path="secret_key" type="str" default="None">
+  AWS secret access key.
+</ParamField>
+
+<ParamField path="session_token" type="str" default="None">
+  AWS session token for temporary credentials.
+</ParamField>
+
+<ParamField path="region" type="str" default="None">
+  AWS region (e.g., 'us-east-1'). If not set, uses AWS_DEFAULT_REGION environment variable.
+</ParamField>
+
+<ParamField path="scheme" type="str" default="None">
+  URL scheme ('http' or 'https'). Defaults to 'https'.
+</ParamField>
+
+<ParamField path="endpoint_override" type="str" default="None">
+  Custom S3 endpoint URL (for S3-compatible storage).
+</ParamField>
+
+<ParamField path="background_writes" type="bool" default="True">
+  Use background threads for writes.
+</ParamField>
+
+<ParamField path="role_arn" type="str" default="None">
+  AWS IAM role ARN to assume.
+</ParamField>
+
+<ResponseField name="filesystem" type="S3FileSystem">
+  An S3 filesystem object.
+</ResponseField>
+
+## GcsFileSystem
+
+Filesystem interface for Google Cloud Storage.
+
+```python
+import pyarrow.fs as fs
+
+gcs = fs.GcsFileSystem(
+    project_id='my-project',
+    access_token='YOUR_ACCESS_TOKEN'
+)
+
+# List files in bucket
+for file_info in gcs.get_file_info(fs.FileSelector('my-bucket/', recursive=True)):
+    print(file_info.path)
+```
+
+### Constructor
+
+```python
+fs.GcsFileSystem(project_id=None, access_token=None, credential_token_expiration=None,
+                default_bucket_location='US', scheme=None, endpoint_override=None,
+                default_metadata=None, retry_time_limit=None)
+```
+
+<ParamField path="project_id" type="str" default="None">
+  GCS project ID.
+</ParamField>
+
+<ParamField path="access_token" type="str" default="None">
+  OAuth2 access token. If not provided, uses default credentials.
+</ParamField>
+
+<ParamField path="default_bucket_location" type="str" default="'US'">
+  Default location for new buckets.
+</ParamField>
+
+<ResponseField name="filesystem" type="GcsFileSystem">
+  A GCS filesystem object.
+</ResponseField>
+
+## AzureFileSystem
+
+Filesystem interface for Azure Blob Storage.
+
+```python
+import pyarrow.fs as fs
+
+azure = fs.AzureFileSystem(
+    account_name='myaccount',
+    account_key='YOUR_ACCOUNT_KEY'
+)
+
+# List files in container
+for file_info in azure.get_file_info(fs.FileSelector('container/', recursive=True)):
+    print(file_info.path)
+```
+
+### Constructor
+
+```python
+fs.AzureFileSystem(account_name, account_key=None, blob_storage_authority=None,
+                   dfs_storage_authority=None, blob_storage_scheme='https',
+                   dfs_storage_scheme='https')
+```
+
+<ParamField path="account_name" type="str">
+  Azure storage account name.
+</ParamField>
+
+<ParamField path="account_key" type="str" default="None">
+  Azure storage account key.
+</ParamField>
+
+<ResponseField name="filesystem" type="AzureFileSystem">
+  An Azure filesystem object.
+</ResponseField>
+
+## HadoopFileSystem
+
+Filesystem interface for HDFS.
+
+```python
+import pyarrow.fs as fs
+
+hdfs = fs.HadoopFileSystem(
+    host='namenode.example.com',
+    port=8020,
+    user='hdfs_user'
+)
+
+# List files
+for file_info in hdfs.get_file_info(fs.FileSelector('/data/', recursive=True)):
+    print(file_info.path)
+```
+
+### Constructor
+
+```python
+fs.HadoopFileSystem(host, port=8020, user=None, kerb_ticket=None,
+                    driver='libhdfs', replication=3, buffer_size=0,
+                    default_block_size=0)
+```
+
+<ParamField path="host" type="str">
+  HDFS namenode hostname.
+</ParamField>
+
+<ParamField path="port" type="int" default="8020">
+  HDFS namenode port.
+</ParamField>
+
+<ParamField path="user" type="str" default="None">
+  Username for HDFS.
+</ParamField>
+
+<ResponseField name="filesystem" type="HadoopFileSystem">
+  An HDFS filesystem object.
+</ResponseField>
+
+## SubTreeFileSystem
+
+Wrap a filesystem with a base path prefix.
+
+```python
+import pyarrow.fs as fs
+
+# Create a SubTreeFileSystem rooted at /data/subset
+base_fs = fs.LocalFileSystem()
+subtree = fs.SubTreeFileSystem('/data/subset', base_fs)
+
+# All paths are relative to /data/subset
+subtree.get_file_info('file.txt')  # Actually accesses /data/subset/file.txt
+```
+
+### Constructor
+
+```python
+fs.SubTreeFileSystem(base_path, base_fs)
+```
+
+<ParamField path="base_path" type="str">
+  Base path prefix for all operations.
+</ParamField>
+
+<ParamField path="base_fs" type="FileSystem">
+  Underlying filesystem.
+</ParamField>
+
+<ResponseField name="filesystem" type="SubTreeFileSystem">
+  A subtree filesystem.
+</ResponseField>
+
+## FileInfo
+
+Information about a file or directory.
+
+```python
+import pyarrow.fs as fs
+
+local_fs = fs.LocalFileSystem()
+info = local_fs.get_file_info('data.parquet')
+
+print(info.path)       # Path to file
+print(info.type)       # FileType.File
+print(info.size)       # File size in bytes
+print(info.mtime)      # Modification time
+```
+
+### Properties
+
+#### path
+
+The file path.
+
+<ResponseField name="path" type="str">
+  File or directory path.
+</ResponseField>
+
+#### type
+
+The file type.
+
+<ResponseField name="type" type="FileType">
+  One of FileType.File, FileType.Directory, FileType.NotFound, or FileType.Unknown.
+</ResponseField>
+
+#### size
+
+File size in bytes.
+
+<ResponseField name="size" type="int">
+  Size in bytes (None for directories).
+</ResponseField>
+
+#### mtime
+
+Modification time.
+
+<ResponseField name="mtime" type="datetime.datetime">
+  Last modification time (None if not available).
+</ResponseField>
+
+## FileSelector
+
+Selector for recursive file discovery.
+
+```python
+import pyarrow.fs as fs
+
+# Select all files recursively
+selector = fs.FileSelector('/data', recursive=True)
+
+# Select only files in directory (non-recursive)
+selector = fs.FileSelector('/data', recursive=False)
+
+# Use with filesystem
+local_fs = fs.LocalFileSystem()
+file_infos = local_fs.get_file_info(selector)
+```
+
+### Constructor
+
+```python
+fs.FileSelector(base_dir, allow_not_found=False, recursive=False)
+```
+
+<ParamField path="base_dir" type="str">
+  Base directory to select from.
+</ParamField>
+
+<ParamField path="allow_not_found" type="bool" default="False">
+  If False, raise error if base_dir doesn't exist.
+</ParamField>
+
+<ParamField path="recursive" type="bool" default="False">
+  Recursively traverse subdirectories.
+</ParamField>
+
+<ResponseField name="selector" type="FileSelector">
+  A file selector object.
+</ResponseField>
+
+## FileType
+
+Enumeration of file types.
+
+```python
+import pyarrow.fs as fs
+
+fs.FileType.File        # Regular file
+fs.FileType.Directory   # Directory
+fs.FileType.NotFound    # File doesn't exist
+fs.FileType.Unknown     # Unknown/special file type
+```
+
+## Utility Functions
+
+### copy_files()
+
+Copy files between filesystems.
+
+```python
+fs.copy_files(source, destination, source_filesystem=None, 
+             destination_filesystem=None, chunk_size=1048576, use_threads=True)
+```
+
+<ParamField path="source" type="str">
+  Source file or directory path.
+</ParamField>
+
+<ParamField path="destination" type="str">
+  Destination file or directory path.
+</ParamField>
+
+<ParamField path="source_filesystem" type="FileSystem" default="None">
+  Source filesystem (inferred if None).
+</ParamField>
+
+<ParamField path="destination_filesystem" type="FileSystem" default="None">
+  Destination filesystem (inferred if None).
+</ParamField>
+
+<ParamField path="chunk_size" type="int" default="1048576">
+  Chunk size for copying (in bytes).
+</ParamField>
+
+<ParamField path="use_threads" type="bool" default="True">
+  Use multiple threads for copying.
+</ParamField>
+
+### Example
+
+```python
+import pyarrow.fs as fs
+
+# Copy from local to S3
+fs.copy_files(
+    'local/data.parquet',
+    's3://bucket/data.parquet'
+)
+
+# Copy directory recursively
+fs.copy_files(
+    '/local/data/',
+    's3://bucket/data/'
+)
+
+# Copy between specific filesystems
+local = fs.LocalFileSystem()
+s3 = fs.S3FileSystem(region='us-east-1')
+
+fs.copy_files(
+    '/data/file.parquet',
+    'bucket/file.parquet',
+    source_filesystem=local,
+    destination_filesystem=s3
+)
+```

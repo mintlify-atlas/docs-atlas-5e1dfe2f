@@ -1,0 +1,423 @@
+---
+title: Array Classes
+description: Apache Arrow array classes for working with columnar data structures
+---
+
+## Array
+
+Base class for all Arrow array types.
+
+```python
+import pyarrow as pa
+
+arr = pa.array([1, 2, 3, 4, 5])
+print(arr)
+```
+
+### array()
+
+Create a pyarrow.Array instance from a Python object.
+
+```python
+pa.array(obj, type=None, mask=None, size=None, from_pandas=None, safe=True, memory_pool=None)
+```
+
+<ParamField path="obj" type="sequence, iterable, ndarray, pandas.Series">
+  If both type and size are specified may be a single use iterable. If not strongly-typed, Arrow type will be inferred for resulting array. Any Arrow-compatible array that implements the Arrow PyCapsule Protocol can be passed as well.
+</ParamField>
+
+<ParamField path="type" type="pyarrow.DataType" default="None">
+  Explicit type to attempt to coerce to, otherwise will be inferred from the data.
+</ParamField>
+
+<ParamField path="mask" type="array[bool]" default="None">
+  Indicate which values are null (True) or not null (False).
+</ParamField>
+
+<ParamField path="size" type="int64" default="None">
+  Size of the elements. If the input is larger than size bail at this length.
+</ParamField>
+
+<ParamField path="from_pandas" type="bool" default="None">
+  Use pandas's semantics for inferring nulls from values in ndarray-like data. Defaults to False if not passed explicitly, or True if a pandas object is passed in.
+</ParamField>
+
+<ParamField path="safe" type="bool" default="True">
+  Check for overflows or other unsafe conversions.
+</ParamField>
+
+<ParamField path="memory_pool" type="pyarrow.MemoryPool" default="None">
+  If not passed, will allocate memory from the currently-set default memory pool.
+</ParamField>
+
+<ResponseField name="array" type="pyarrow.Array or pyarrow.ChunkedArray">
+  A ChunkedArray instead of an Array is returned if the object data overflowed binary storage or the object's `__arrow_array__` protocol method returned a chunked array.
+</ResponseField>
+
+### Properties
+
+#### type
+
+Return the data type of the array.
+
+```python
+arr = pa.array([1, 2, 3])
+print(arr.type)  # int64
+```
+
+<ResponseField name="type" type="pyarrow.DataType">
+  The Arrow data type of this array.
+</ResponseField>
+
+#### null_count
+
+Return the number of null values in the array.
+
+```python
+arr = pa.array([1, None, 3])
+print(arr.null_count)  # 1
+```
+
+<ResponseField name="null_count" type="int">
+  The count of null values.
+</ResponseField>
+
+### Methods
+
+#### slice()
+
+Compute zero-copy slice of this array.
+
+```python
+array.slice(offset=0, length=None)
+```
+
+<ParamField path="offset" type="int" default="0">
+  Offset from start of array to slice.
+</ParamField>
+
+<ParamField path="length" type="int" default="None">
+  Length of slice (default is until end of array from offset).
+</ParamField>
+
+<ResponseField name="sliced" type="pyarrow.Array">
+  A zero-copy slice of the array.
+</ResponseField>
+
+#### cast()
+
+Cast array values to another data type.
+
+```python
+array.cast(target_type, safe=True)
+```
+
+<ParamField path="target_type" type="pyarrow.DataType">
+  Type to cast to.
+</ParamField>
+
+<ParamField path="safe" type="bool" default="True">
+  Check for overflows or other unsafe conversions.
+</ParamField>
+
+<ResponseField name="casted" type="pyarrow.Array">
+  Array with values cast to the target type.
+</ResponseField>
+
+#### to_pylist()
+
+Convert to a Python list.
+
+```python
+arr = pa.array([1, 2, 3])
+py_list = arr.to_pylist()
+print(py_list)  # [1, 2, 3]
+```
+
+<ResponseField name="list" type="list">
+  A Python list with the array values.
+</ResponseField>
+
+#### to_numpy()
+
+Convert to a NumPy array.
+
+```python
+array.to_numpy(zero_copy_only=True, writable=False)
+```
+
+<ParamField path="zero_copy_only" type="bool" default="True">
+  If True, raise an exception if conversion requires copying data.
+</ParamField>
+
+<ParamField path="writable" type="bool" default="False">
+  For numpy arrays created with zero copy, return a writable view.
+</ParamField>
+
+<ResponseField name="array" type="numpy.ndarray">
+  A NumPy array with the data.
+</ResponseField>
+
+## ChunkedArray
+
+An array-like composed from a collection of pyarrow.Arrays.
+
+```python
+import pyarrow as pa
+
+chunked = pa.chunked_array([[1, 2], [3, 4, 5]])
+print(chunked)
+print(f"Number of chunks: {chunked.num_chunks}")
+```
+
+### chunked_array()
+
+Construct a ChunkedArray from a list of arrays.
+
+```python
+pa.chunked_array(arrays, type=None)
+```
+
+<ParamField path="arrays" type="list of Array">
+  List of arrays to compose into a ChunkedArray.
+</ParamField>
+
+<ParamField path="type" type="pyarrow.DataType" default="None">
+  If provided, all arrays will be cast to this type.
+</ParamField>
+
+<ResponseField name="chunked_array" type="pyarrow.ChunkedArray">
+  A ChunkedArray composed of the input arrays.
+</ResponseField>
+
+### Properties
+
+#### num_chunks
+
+Number of underlying chunks.
+
+```python
+chunked = pa.chunked_array([[1, 2], [3, 4]])
+print(chunked.num_chunks)  # 2
+```
+
+<ResponseField name="num_chunks" type="int">
+  The number of chunks.
+</ResponseField>
+
+#### chunks
+
+List of chunks.
+
+```python
+chunked = pa.chunked_array([[1, 2], [3, 4]])
+for chunk in chunked.chunks:
+    print(chunk)
+```
+
+<ResponseField name="chunks" type="list of Array">
+  The underlying chunks as a list.
+</ResponseField>
+
+### Methods
+
+#### chunk()
+
+Select a chunk by its index.
+
+```python
+chunked_array.chunk(i)
+```
+
+<ParamField path="i" type="int">
+  Index of the chunk to select.
+</ParamField>
+
+<ResponseField name="chunk" type="pyarrow.Array">
+  The selected chunk.
+</ResponseField>
+
+## Typed Array Classes
+
+### NumericArray
+
+Base class for all numeric array types (integers and floats).
+
+### IntegerArray
+
+Base class for all integer array types.
+
+### Int8Array, Int16Array, Int32Array, Int64Array
+
+Signed integer arrays of 8, 16, 32, and 64 bits respectively.
+
+```python
+arr = pa.array([1, 2, 3], type=pa.int32())
+print(type(arr))  # Int32Array
+```
+
+### UInt8Array, UInt16Array, UInt32Array, UInt64Array
+
+Unsigned integer arrays of 8, 16, 32, and 64 bits respectively.
+
+### FloatingPointArray
+
+Base class for floating point array types.
+
+### HalfFloatArray, FloatArray, DoubleArray
+
+Floating point arrays for 16-bit (half), 32-bit (float), and 64-bit (double) precision.
+
+```python
+arr = pa.array([1.0, 2.5, 3.7], type=pa.float32())
+print(type(arr))  # FloatArray
+```
+
+### BooleanArray
+
+Boolean (true/false) array.
+
+```python
+arr = pa.array([True, False, True])
+print(type(arr))  # BooleanArray
+```
+
+### StringArray
+
+Variable-length UTF-8 string array.
+
+```python
+arr = pa.array(["hello", "world", "arrow"])
+print(type(arr))  # StringArray
+```
+
+### BinaryArray
+
+Variable-length binary array.
+
+```python
+arr = pa.array([b"hello", b"world"], type=pa.binary())
+print(type(arr))  # BinaryArray
+```
+
+### ListArray
+
+Array of variable-length lists.
+
+```python
+arr = pa.array([[1, 2], [3, 4, 5], [6]])
+print(type(arr))  # ListArray
+```
+
+### StructArray
+
+Array of structured (named fields) values.
+
+```python
+struct_type = pa.struct([('x', pa.int64()), ('y', pa.float64())])
+arr = pa.array([{'x': 1, 'y': 1.5}, {'x': 2, 'y': 2.5}], type=struct_type)
+print(type(arr))  # StructArray
+```
+
+### DictionaryArray
+
+Array with dictionary encoding (categorical data).
+
+```python
+indices = pa.array([0, 1, 0, 1, 2])
+dictionary = pa.array(['cat', 'dog', 'bird'])
+dict_array = pa.DictionaryArray.from_arrays(indices, dictionary)
+print(dict_array)
+```
+
+### TimestampArray
+
+Array of timestamp values with timezone and unit.
+
+```python
+from datetime import datetime
+arr = pa.array([datetime(2020, 1, 1), datetime(2021, 1, 1)])
+print(type(arr))  # TimestampArray
+```
+
+### Date32Array, Date64Array
+
+Date arrays stored as 32-bit or 64-bit integers.
+
+### Time32Array, Time64Array
+
+Time of day arrays with 32-bit or 64-bit storage.
+
+### DurationArray
+
+Array of duration (time interval) values.
+
+## Utility Functions
+
+### nulls()
+
+Create an array of all null values.
+
+```python
+pa.nulls(size, type=None, memory_pool=None)
+```
+
+<ParamField path="size" type="int">
+  Number of null values.
+</ParamField>
+
+<ParamField path="type" type="pyarrow.DataType" default="None">
+  Data type (defaults to null type).
+</ParamField>
+
+<ParamField path="memory_pool" type="pyarrow.MemoryPool" default="None">
+  Memory pool for allocation.
+</ParamField>
+
+<ResponseField name="array" type="pyarrow.Array">
+  Array of null values.
+</ResponseField>
+
+### repeat()
+
+Create an array by repeating a value.
+
+```python
+pa.repeat(value, size, memory_pool=None)
+```
+
+<ParamField path="value" type="scalar-like">
+  Value to repeat.
+</ParamField>
+
+<ParamField path="size" type="int">
+  Number of times to repeat the value.
+</ParamField>
+
+<ParamField path="memory_pool" type="pyarrow.MemoryPool" default="None">
+  Memory pool for allocation.
+</ParamField>
+
+<ResponseField name="array" type="pyarrow.Array">
+  Array with repeated value.
+</ResponseField>
+
+### concat_arrays()
+
+Concatenate multiple arrays into a single array.
+
+```python
+pa.concat_arrays(arrays, memory_pool=None)
+```
+
+<ParamField path="arrays" type="list of Array">
+  Arrays to concatenate.
+</ParamField>
+
+<ParamField path="memory_pool" type="pyarrow.MemoryPool" default="None">
+  Memory pool for allocation.
+</ParamField>
+
+<ResponseField name="array" type="pyarrow.Array">
+  Concatenated array.
+</ResponseField>

@@ -1,0 +1,570 @@
+---
+title: "Ruby Quickstart"
+description: "Get started with Red Arrow (Apache Arrow Ruby) - from installation to working with arrays, tables, and files"
+---
+
+This guide will get you up and running with Red Arrow, the Ruby bindings for Apache Arrow. You'll learn how to create arrays, build tables, and read/write data files.
+
+## Prerequisites
+
+You'll need:
+- Ruby 2.5 or higher
+- Bundler for dependency management
+- Basic familiarity with Ruby
+
+<Note>
+Red Arrow uses GObject Introspection and requires Apache Arrow GLib to be installed on your system.
+</Note>
+
+<Steps>
+
+<Step title="Install Red Arrow">
+
+### Using RubyGems with Automatic System Dependencies
+
+The easiest way is to use `rubygems-requirements-system` which automatically installs Arrow GLib:
+
+```bash
+gem install rubygems-requirements-system red-arrow
+```
+
+### Using Bundler
+
+Add to your `Gemfile`:
+
+```ruby
+plugin "rubygems-requirements-system"
+
+gem "red-arrow"
+```
+
+Then install:
+
+```bash
+bundle install
+```
+
+### Manual Installation of Arrow GLib
+
+If you prefer to install Arrow GLib manually:
+
+<Tabs>
+  <Tab title="macOS">
+    ```bash
+    brew install apache-arrow-glib
+    gem install red-arrow
+    ```
+  </Tab>
+  <Tab title="Ubuntu/Debian">
+    ```bash
+    sudo apt update
+    sudo apt install -y libarrow-glib-dev
+    gem install red-arrow
+    ```
+  </Tab>
+</Tabs>
+
+Verify the installation:
+
+```ruby
+require "arrow"
+puts Arrow::VERSION
+```
+
+</Step>
+
+<Step title="Create Your First Arrays">
+
+Arrays are the fundamental building blocks in Arrow - typed, homogeneous collections of data.
+
+```ruby
+require "arrow"
+
+# Create arrays of different types
+uint8_array = Arrow::UInt8Array.new([1, 2, 4, 8])
+int32_array = Arrow::Int32Array.new([1, -2, 4, -8])
+float_array = Arrow::FloatArray.new([1.1, -2.2, 4.4, -8.8])
+string_array = Arrow::StringArray.new(["Alice", "Bob", "Carol"])
+
+puts uint8_array
+# Output: [1, 2, 4, 8]
+
+puts string_array
+# Output: ["Alice", "Bob", "Carol"]
+```
+
+**Create arrays with null values:**
+
+```ruby
+# nil values become nulls
+array_with_nulls = Arrow::Int32Array.new([1, nil, 3, nil, 5])
+puts array_with_nulls
+# Output: [1, (null), 3, (null), 5]
+
+puts "Length: #{array_with_nulls.length}"
+puts "Null count: #{array_with_nulls.n_nulls}"
+```
+
+**Access array elements:**
+
+```ruby
+array = Arrow::StringArray.new(["Alice", "Bob", "Carol"])
+
+# Access by index
+puts array[0]  # => "Alice"
+puts array[1]  # => "Bob"
+
+# Slice arrays
+slice = array.slice(1, 2)  # Start at index 1, length 2
+puts slice     # => ["Bob", "Carol"]
+```
+
+</Step>
+
+<Step title="Build Tables with Schema">
+
+Tables combine multiple arrays into named columns with a defined schema.
+
+```ruby
+require "arrow"
+
+# Define schema with field names and types
+fields = [
+  Arrow::Field.new("day", :uint8),
+  Arrow::Field.new("month", :uint8),
+  Arrow::Field.new("year", :uint16)
+]
+schema = Arrow::Schema.new(fields)
+
+# Create arrays for each column
+days = Arrow::UInt8Array.new([1, 12, 17, 23, 28])
+months = Arrow::UInt8Array.new([1, 3, 5, 7, 1])
+years = Arrow::UInt16Array.new([1990, 2000, 1995, 2000, 1995])
+
+# Build table
+birthdays_table = Arrow::Table.new(schema, [days, months, years])
+
+puts "Table with #{birthdays_table.n_rows} rows"
+puts "Columns: #{birthdays_table.column_names.join(', ')}"
+
+# Access columns
+puts birthdays_table["year"]
+```
+
+**Alternative: Create table from hash:**
+
+```ruby
+# More convenient for simple cases
+table = Arrow::Table.new(
+  "name" => Arrow::StringArray.new(["Alice", "Bob", "Carol"]),
+  "age" => Arrow::UInt8Array.new([30, 25, 35]),
+  "city" => Arrow::StringArray.new(["NYC", "SF", "LA"])
+)
+
+puts table.n_rows    # => 3
+puts table.n_columns # => 3
+```
+
+</Step>
+
+<Step title="Write and Read Arrow IPC Files">
+
+Arrow's IPC format provides fast, zero-copy serialization.
+
+**Write to file:**
+
+```ruby
+require "arrow"
+
+# Create schema and data
+fields = [
+  Arrow::Field.new("uint8", :uint8),
+  Arrow::Field.new("int32", :int32),
+  Arrow::Field.new("float", :float)
+]
+schema = Arrow::Schema.new(fields)
+
+# Write to file
+Arrow::FileOutputStream.open("/tmp/data.arrow", false) do |output|
+  Arrow::RecordBatchFileWriter.open(output, schema) do |writer|
+    # Create record batches
+    columns = [
+      Arrow::UInt8Array.new([1, 2, 4, 8]),
+      Arrow::Int32Array.new([1, -2, 4, -8]),
+      Arrow::FloatArray.new([1.1, -2.2, 4.4, -8.8])
+    ]
+    
+    record_batch = Arrow::RecordBatch.new(schema, 4, columns)
+    writer.write_record_batch(record_batch)
+    
+    # Can write multiple batches
+    sliced_columns = columns.map { |col| col.slice(1, 2) }
+    record_batch2 = Arrow::RecordBatch.new(schema, 2, sliced_columns)
+    writer.write_record_batch(record_batch2)
+  end
+end
+
+puts "Wrote data to /tmp/data.arrow"
+```
+
+**Read from file:**
+
+```ruby
+require "arrow"
+
+Arrow::MemoryMappedInputStream.open("/tmp/data.arrow") do |input|
+  reader = Arrow::RecordBatchFileReader.new(input)
+  
+  puts "Schema: #{reader.schema}"
+  puts "Number of record batches: #{reader.n_record_batches}"
+  
+  reader.each_with_index do |record_batch, i|
+    puts "\n=== Record Batch #{i} ==="
+    puts "Rows: #{record_batch.n_rows}"
+    
+    reader.schema.fields.each do |field|
+      values = record_batch[field.name].to_a
+      puts "  #{field.name}: #{values.inspect}"
+    end
+  end
+end
+```
+
+</Step>
+
+<Step title="Read and Write Parquet Files">
+
+Parquet support requires the `red-parquet` gem.
+
+```bash
+gem install red-parquet
+```
+
+**Write Parquet:**
+
+```ruby
+require "arrow"
+require "parquet"
+
+# Create table
+table = Arrow::Table.new(
+  "name" => Arrow::StringArray.new(["Alice", "Bob", "Carol"]),
+  "age" => Arrow::UInt8Array.new([30, 25, 35]),
+  "city" => Arrow::StringArray.new(["NYC", "SF", "LA"])
+)
+
+# Write to Parquet
+Arrow::FileOutputStream.open("people.parquet", false) do |output|
+  Parquet::ArrowFileWriter.open(table.schema, output) do |writer|
+    writer.write_table(table)
+  end
+end
+
+puts "Wrote people.parquet"
+```
+
+**Read Parquet:**
+
+```ruby
+require "parquet"
+
+Arrow::MemoryMappedInputStream.open("people.parquet") do |input|
+  reader = Parquet::ArrowFileReader.new(input)
+  table = reader.read_table
+  
+  puts "Read table with #{table.n_rows} rows"
+  puts "Columns: #{table.column_names.join(', ')}"
+  
+  # Access data
+  table.each_record_batch do |batch|
+    batch.n_rows.times do |i|
+      row = batch.schema.fields.map do |field|
+        batch[field.name][i]
+      end
+      puts row.join(", ")
+    end
+  end
+end
+```
+
+</Step>
+
+<Step title="Work with Streaming Data">
+
+Arrow supports streaming for large datasets that don't fit in memory.
+
+**Write stream:**
+
+```ruby
+require "arrow"
+
+fields = [
+  Arrow::Field.new("id", :int32),
+  Arrow::Field.new("value", :float)
+]
+schema = Arrow::Schema.new(fields)
+
+Arrow::FileOutputStream.open("/tmp/stream.arrow", false) do |output|
+  Arrow::RecordBatchStreamWriter.open(output, schema) do |writer|
+    # Write multiple batches
+    3.times do |batch_num|
+      ids = Arrow::Int32Array.new([batch_num * 10, batch_num * 10 + 1])
+      values = Arrow::FloatArray.new([rand * 100, rand * 100])
+      
+      batch = Arrow::RecordBatch.new(schema, 2, [ids, values])
+      writer.write_record_batch(batch)
+    end
+  end
+end
+
+puts "Wrote streaming data"
+```
+
+**Read stream:**
+
+```ruby
+Arrow::MemoryMappedInputStream.open("/tmp/stream.arrow") do |input|
+  reader = Arrow::RecordBatchStreamReader.new(input)
+  
+  total_rows = 0
+  reader.each do |record_batch|
+    puts "Batch: #{record_batch.n_rows} rows"
+    total_rows += record_batch.n_rows
+  end
+  
+  puts "Total rows: #{total_rows}"
+end
+```
+
+</Step>
+
+</Steps>
+
+## Complete Example
+
+Here's a complete working example that demonstrates common Red Arrow operations:
+
+```ruby
+require "arrow"
+
+# 1. Create structured data
+fields = [
+  Arrow::Field.new("product", :string),
+  Arrow::Field.new("quantity", :int32),
+  Arrow::Field.new("price", :float)
+]
+schema = Arrow::Schema.new(fields)
+
+products = Arrow::StringArray.new(["A", "B", "A", "C", "B"])
+quantities = Arrow::Int32Array.new([10, 20, 15, 5, 25])
+prices = Arrow::FloatArray.new([100.0, 200.0, 100.0, 150.0, 200.0])
+
+table = Arrow::Table.new(schema, [products, quantities, prices])
+
+puts "=== Original Table ==="
+puts "Rows: #{table.n_rows}, Columns: #{table.n_columns}"
+
+# 2. Write to Arrow IPC file
+Arrow::FileOutputStream.open("/tmp/sales.arrow", false) do |output|
+  Arrow::RecordBatchFileWriter.open(output, schema) do |writer|
+    table.each_record_batch do |batch|
+      writer.write_record_batch(batch)
+    end
+  end
+end
+
+puts "\nWrote sales.arrow"
+
+# 3. Read back and process
+Arrow::MemoryMappedInputStream.open("/tmp/sales.arrow") do |input|
+  reader = Arrow::RecordBatchFileReader.new(input)
+  loaded_table = reader.read_table
+  
+  puts "\n=== Loaded Table ==="
+  
+  # Calculate total revenue
+  quantities = loaded_table["quantity"].to_a
+  prices = loaded_table["price"].to_a
+  
+  total_revenue = quantities.zip(prices).sum { |q, p| q * p }
+  puts "Total revenue: $#{total_revenue}"
+  
+  # Group by product
+  products_hash = Hash.new { |h, k| h[k] = { qty: 0, revenue: 0 } }
+  
+  loaded_table["product"].to_a.each_with_index do |product, i|
+    qty = quantities[i]
+    price = prices[i]
+    products_hash[product][:qty] += qty
+    products_hash[product][:revenue] += qty * price
+  end
+  
+  puts "\n=== By Product ==="
+  products_hash.each do |product, stats|
+    puts "#{product}: Quantity=#{stats[:qty]}, Revenue=$#{stats[:revenue]}"
+  end
+end
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Red Parquet" icon="file" href="/ruby/parquet">
+    Work with Parquet files in Ruby
+  </Card>
+  <Card title="Red Arrow Dataset" icon="database" href="/ruby/dataset">
+    Handle multi-file datasets
+  </Card>
+  <Card title="Red Arrow Flight" icon="plane" href="/ruby/flight">
+    Build Arrow Flight RPC services
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/ruby">
+    Complete Ruby API documentation
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+### Convert Arrays to Ruby Arrays
+
+```ruby
+arrow_array = Arrow::Int32Array.new([1, 2, 3, 4, 5])
+ruby_array = arrow_array.to_a
+puts ruby_array.inspect  # => [1, 2, 3, 4, 5]
+```
+
+### Iterate Over Records
+
+```ruby
+table.each_record_batch do |batch|
+  batch.n_rows.times do |i|
+    # Access each field
+    row_data = batch.schema.fields.map do |field|
+      batch[field.name][i]
+    end
+    puts row_data.join(", ")
+  end
+end
+```
+
+### Filter Data
+
+```ruby
+# Convert to Ruby array, filter, convert back
+ages = Arrow::UInt8Array.new([20, 30, 40, 50])
+filtered = ages.to_a.select { |age| age > 25 }
+filtered_array = Arrow::UInt8Array.new(filtered)
+puts filtered_array  # => [30, 40, 50]
+```
+
+### Handle Large Files with Streaming
+
+```ruby
+# Read large files in batches
+Arrow::MemoryMappedInputStream.open("large_file.arrow") do |input|
+  reader = Arrow::RecordBatchStreamReader.new(input)
+  
+  reader.each do |batch|
+    # Process batch without loading entire file
+    process_batch(batch)
+  end
+end
+```
+
+## Performance Tips
+
+<AccordionGroup>
+  <Accordion title="Use memory-mapped files for large data">
+    Memory-mapped I/O is more efficient for large files:
+    ```ruby
+    # Preferred for large files
+    Arrow::MemoryMappedInputStream.open("large.arrow") do |input|
+      reader = Arrow::RecordBatchFileReader.new(input)
+      table = reader.read_table
+    end
+    ```
+  </Accordion>
+  
+  <Accordion title="Process in batches">
+    For very large data, process in batches instead of loading entire tables:
+    ```ruby
+    reader.each_with_index do |batch, i|
+      # Process one batch at a time
+      process_batch(batch)
+    end
+    ```
+  </Accordion>
+  
+  <Accordion title="Use appropriate data types">
+    Choose the smallest data type that fits your data:
+    ```ruby
+    # Use uint8 for small integers (0-255)
+    Arrow::UInt8Array.new([1, 2, 3])
+    
+    # Use int32 for larger integers
+    Arrow::Int32Array.new([1000, 2000, 3000])
+    ```
+  </Accordion>
+  
+  <Accordion title="Reuse schema objects">
+    Create schema once and reuse for multiple batches:
+    ```ruby
+    schema = Arrow::Schema.new(fields)
+    
+    writer.open do |w|
+      batches.each do |data|
+        batch = Arrow::RecordBatch.new(schema, data.size, data)
+        w.write_record_batch(batch)
+      end
+    end
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Installation fails with GLib errors">
+    Make sure Arrow GLib is installed:
+    ```bash
+    # macOS
+    brew install apache-arrow-glib
+    
+    # Ubuntu/Debian
+    sudo apt-get install libarrow-glib-dev
+    
+    # Then install the gem
+    gem install red-arrow
+    ```
+  </Accordion>
+  
+  <Accordion title="Cannot load 'arrow' gem">
+    Ensure GObject Introspection is working:
+    ```ruby
+    require "gobject-introspection"
+    # If this fails, install gobject-introspection gem
+    gem install gobject-introspection
+    ```
+  </Accordion>
+  
+  <Accordion title="Type mismatch errors">
+    Ensure array lengths match when creating tables:
+    ```ruby
+    # All arrays must have the same length
+    arr1 = Arrow::Int32Array.new([1, 2, 3])
+    arr2 = Arrow::StringArray.new(["a", "b", "c"])  # Same length
+    
+    table = Arrow::Table.new("col1" => arr1, "col2" => arr2)
+    ```
+  </Accordion>
+  
+  <Accordion title="File permission errors">
+    Make sure you have write permissions:
+    ```ruby
+    # Use false parameter to create new file
+    Arrow::FileOutputStream.open("/tmp/data.arrow", false) do |output|
+      # Write data
+    end
+    ```
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,476 @@
+---
+title: Building Python from Source
+description: Complete guide to building PyArrow from source with conda, pip, and system dependencies
+---
+
+This guide covers building PyArrow (the Python bindings for Apache Arrow) from source. PyArrow requires Arrow C++ to be built first.
+
+## System Requirements
+
+<Tabs>
+
+<Tab title="Linux/macOS">
+- Python 3.9 or later
+- C++20 compiler (gcc 9+ on Linux, Xcode on macOS)
+- CMake 3.25 or higher
+- Arrow C++ libraries (same version as PyArrow)
+</Tab>
+
+<Tab title="Windows">
+- Python 3.9 or later
+- Visual Studio 2022 or Build Tools for Visual Studio 2022
+- CMake 3.25 or higher
+- At least one Windows SDK
+</Tab>
+
+</Tabs>
+
+## Environment Setup
+
+There are two supported approaches: using **conda** for dependency management or using **pip** with manual dependencies.
+
+### Method 1: Using Conda (Recommended)
+
+<Steps>
+
+### Clone Arrow repository
+
+```bash
+git clone https://github.com/apache/arrow.git
+cd arrow
+```
+
+### Initialize submodules and set test data paths
+
+```bash
+git submodule update --init
+export PARQUET_TEST_DATA="${PWD}/cpp/submodules/parquet-testing/data"
+export ARROW_TEST_DATA="${PWD}/testing/data"
+```
+
+### Create conda environment
+
+<CodeGroup>
+
+```bash Linux/macOS
+conda create -y -n pyarrow-dev -c conda-forge \
+    --file arrow/ci/conda_env_unix.txt \
+    --file arrow/ci/conda_env_cpp.txt \
+    --file arrow/ci/conda_env_python.txt \
+    --file arrow/ci/conda_env_gandiva.txt \
+    compilers \
+    python=3.13 \
+    pandas
+
+conda activate pyarrow-dev
+```
+
+```bash Windows
+conda create -y -n pyarrow-dev -c conda-forge ^
+    --file arrow\ci\conda_env_cpp.txt ^
+    --file arrow\ci\conda_env_python.txt ^
+    --file arrow\ci\conda_env_gandiva.txt ^
+    python=3.13
+
+conda activate pyarrow-dev
+```
+
+</CodeGroup>
+
+### Set environment variables
+
+<CodeGroup>
+
+```bash Linux/macOS
+export ARROW_HOME=$CONDA_PREFIX
+```
+
+```bash Windows
+set ARROW_HOME=%CONDA_PREFIX%\Library
+```
+
+</CodeGroup>
+
+</Steps>
+
+### Method 2: Using pip
+
+<Warning>
+If you installed Python via Anaconda or Miniconda, you must use the conda-based approach instead. pip-based virtual environments don't work correctly with conda Python installations.
+</Warning>
+
+<Steps>
+
+### Clone and initialize repository
+
+```bash
+git clone https://github.com/apache/arrow.git
+cd arrow
+git submodule update --init
+export PARQUET_TEST_DATA="${PWD}/cpp/submodules/parquet-testing/data"
+export ARROW_TEST_DATA="${PWD}/testing/data"
+```
+
+### Install system dependencies
+
+<CodeGroup>
+
+```bash Ubuntu/Debian
+sudo apt-get install build-essential ninja-build cmake python3-dev
+```
+
+```bash macOS
+brew update && brew bundle --file=arrow/cpp/Brewfile
+```
+
+</CodeGroup>
+
+### Create Python virtual environment
+
+```bash
+python3 -m venv pyarrow-dev
+source ./pyarrow-dev/bin/activate
+pip install -r arrow/python/requirements-build.txt
+
+# Create installation directory
+mkdir dist
+```
+
+### Set environment variables
+
+```bash
+export ARROW_HOME=$(pwd)/dist
+export LD_LIBRARY_PATH=$(pwd)/dist/lib:$LD_LIBRARY_PATH
+export CMAKE_PREFIX_PATH=$ARROW_HOME:$CMAKE_PREFIX_PATH
+```
+
+</Steps>
+
+## Building Arrow C++
+
+PyArrow requires Arrow C++ libraries to be built first.
+
+<Steps>
+
+### Configure Arrow C++ build
+
+<CodeGroup>
+
+```bash Using Presets (Recommended)
+cmake -S arrow/cpp -B arrow/cpp/build \
+    -DCMAKE_INSTALL_PREFIX=$ARROW_HOME \
+    --preset ninja-release-python
+```
+
+```bash Manual Configuration
+cmake -S arrow/cpp -B arrow/cpp/build \
+    -DCMAKE_INSTALL_PREFIX=$ARROW_HOME \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DARROW_BUILD_TESTS=OFF \
+    -DARROW_COMPUTE=ON \
+    -DARROW_CSV=ON \
+    -DARROW_DATASET=ON \
+    -DARROW_FILESYSTEM=ON \
+    -DARROW_HDFS=ON \
+    -DARROW_JSON=ON \
+    -DARROW_PARQUET=ON \
+    -DARROW_WITH_BROTLI=ON \
+    -DARROW_WITH_BZ2=ON \
+    -DARROW_WITH_LZ4=ON \
+    -DARROW_WITH_SNAPPY=ON \
+    -DARROW_WITH_ZLIB=ON \
+    -DARROW_WITH_ZSTD=ON \
+    -DPARQUET_REQUIRE_ENCRYPTION=ON
+```
+
+```bash Windows
+mkdir arrow\cpp\build
+pushd arrow\cpp\build
+
+cmake -G "Ninja" ^
+    -DCMAKE_INSTALL_PREFIX=%ARROW_HOME% ^
+    -DCMAKE_UNITY_BUILD=ON ^
+    -DARROW_COMPUTE=ON ^
+    -DARROW_CSV=ON ^
+    -DARROW_CXXFLAGS="/WX /MP" ^
+    -DARROW_DATASET=ON ^
+    -DARROW_FILESYSTEM=ON ^
+    -DARROW_HDFS=ON ^
+    -DARROW_JSON=ON ^
+    -DARROW_PARQUET=ON ^
+    -DARROW_WITH_LZ4=ON ^
+    -DARROW_WITH_SNAPPY=ON ^
+    -DARROW_WITH_ZLIB=ON ^
+    -DARROW_WITH_ZSTD=ON ^
+    ..
+
+popd
+```
+
+</CodeGroup>
+
+<Tip>
+**Available presets:**
+- `ninja-release-python` - Standard release build for PyArrow
+- `ninja-release-python-maximal` - All features including CUDA, Flight, Gandiva
+- `ninja-release-python-minimal` - Minimal features (no ORC, dataset)
+- `ninja-debug-python` - Debug build with symbols
+</Tip>
+
+### Build and install Arrow C++
+
+<CodeGroup>
+
+```bash Linux/macOS
+cmake --build arrow/cpp/build --target install
+```
+
+```bash Windows
+cmake --build arrow\cpp\build --target install --config Release
+```
+
+</CodeGroup>
+
+</Steps>
+
+<Warning>
+If you encounter CMake errors, ensure:
+- Arrow C++ version matches the PyArrow version you're building
+- `ARROW_HOME` is set correctly
+- For conda environments, use `ARROW_DEPENDENCY_SOURCE=CONDA`
+- For pip, you may need `ARROW_DEPENDENCY_SOURCE=BUNDLED` or `SYSTEM`
+</Warning>
+
+## Building PyArrow
+
+<Steps>
+
+### Navigate to Python directory
+
+```bash
+cd arrow/python
+```
+
+### Build PyArrow in-place
+
+<CodeGroup>
+
+```bash Development Build
+python setup.py build_ext --inplace
+```
+
+```bash Debug Build
+export PYARROW_BUILD_TYPE=debug
+python setup.py build_ext --inplace
+```
+
+```bash Parallel Build (Faster)
+export PYARROW_PARALLEL=8  # Number of CPU cores
+python setup.py build_ext --inplace
+```
+
+</CodeGroup>
+
+### Install as editable package (optional)
+
+```bash
+pip install -e . --no-build-isolation
+```
+
+</Steps>
+
+### Build Configuration
+
+PyArrow automatically detects which Arrow C++ components were built. Override with environment variables:
+
+```bash
+export PYARROW_WITH_PARQUET=1
+export PYARROW_WITH_DATASET=1
+export PYARROW_WITH_FLIGHT=1
+export PYARROW_WITH_GANDIVA=1
+export PYARROW_WITH_S3=1
+export PYARROW_WITH_GCS=1
+export PYARROW_WITH_HDFS=1
+export PYARROW_WITH_CUDA=1
+
+python setup.py build_ext --inplace
+```
+
+## Platform-Specific Notes
+
+### Windows: Bundling Arrow C++ DLLs
+
+On Windows without conda, Arrow C++ DLLs must be bundled or in PATH:
+
+```bash
+# Option 1: Bundle DLLs with PyArrow
+set PYARROW_BUNDLE_ARROW_CPP=1
+python setup.py build_ext --inplace
+
+# Option 2: Add to PATH before importing
+set PATH=%ARROW_HOME%\bin;%PATH%
+python -c "import pyarrow"
+```
+
+<Warning>
+Bundled Arrow C++ libraries won't auto-update when rebuilding Arrow C++. You must rebuild PyArrow after C++ changes.
+</Warning>
+
+### Linux: Library Path Issues
+
+On some systems, libraries may install to `lib64`:
+
+```bash
+cmake -DCMAKE_INSTALL_LIBDIR=lib ...
+```
+
+### Python Version Selection
+
+If multiple Python versions exist:
+
+```bash
+cmake -DPython3_EXECUTABLE=/path/to/bin/python ...
+```
+
+## Building Distribution Wheels
+
+To create a redistributable wheel with bundled libraries:
+
+```bash
+pip install wheel
+python setup.py build_ext --build-type=release \
+    --bundle-arrow-cpp bdist_wheel
+```
+
+The wheel will be in `dist/pyarrow-*.whl`.
+
+## Cleaning Stale Build Artifacts
+
+<AccordionGroup>
+
+<Accordion title="When to clean build artifacts">
+Clean when you see errors like:
+- `Unknown CMake command "arrow_keep_backward_compatibility"`
+- Linking errors after Arrow C++ updates
+- Unexpected import failures
+</Accordion>
+
+<Accordion title="Clean Arrow C++ build">
+```bash
+rm -rf arrow/cpp/build
+```
+</Accordion>
+
+<Accordion title="Clean PyArrow build artifacts">
+```bash
+git clean -Xfd python
+```
+</Accordion>
+
+<Accordion title="Recreate conda environment">
+```bash
+conda deactivate
+conda remove -n pyarrow-dev --all
+# Then recreate from scratch
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Environment Variables Reference
+
+| Variable | Description | Default |
+|----------|-------------|----------|
+| `PYARROW_BUILD_TYPE` | Build type (release, debug, relwithdebinfo) | `release` |
+| `PYARROW_PARALLEL` | Number of parallel compilation jobs | auto |
+| `PYARROW_BUNDLE_ARROW_CPP` | Bundle Arrow C++ libraries | `0` |
+| `PYARROW_CMAKE_GENERATOR` | CMake generator (e.g., Ninja, Visual Studio) | system default |
+| `PYARROW_CMAKE_OPTIONS` | Additional CMake options | `''` |
+| `PYARROW_CXXFLAGS` | Extra C++ compiler flags | `''` |
+| `PYARROW_WITH_PARQUET` | Enable Parquet support | auto-detect |
+| `PYARROW_WITH_DATASET` | Enable Dataset API | auto-detect |
+| `PYARROW_WITH_FLIGHT` | Enable Flight RPC | auto-detect |
+| `PYARROW_WITH_GANDIVA` | Enable Gandiva | auto-detect |
+| `PYARROW_WITH_S3` | Enable S3 filesystem | auto-detect |
+| `PYARROW_WITH_GCS` | Enable Google Cloud Storage | auto-detect |
+| `PYARROW_WITH_HDFS` | Enable HDFS | auto-detect |
+| `PYARROW_WITH_CUDA` | Enable CUDA integration | auto-detect |
+
+## Running Tests
+
+After building:
+
+```bash
+# Install test dependencies
+pip install -r arrow/python/requirements-test.txt
+
+# Run tests
+pytest arrow/python/pyarrow
+
+# Run specific test
+pytest arrow/python/pyarrow/tests/test_array.py
+```
+
+## Common Build Errors
+
+<AccordionGroup>
+
+<Accordion title="CMake cannot find Arrow">
+**Error**: `Could not find Arrow`
+
+**Solution**: Ensure `ARROW_HOME` is set and Arrow C++ is installed:
+```bash
+export ARROW_HOME=/path/to/arrow/install
+export CMAKE_PREFIX_PATH=$ARROW_HOME:$CMAKE_PREFIX_PATH
+```
+</Accordion>
+
+<Accordion title="Version mismatch">
+**Error**: `Arrow C++ version X.Y.Z does not match PyArrow version A.B.C`
+
+**Solution**: Ensure Arrow C++ and PyArrow versions match. Rebuild Arrow C++ if needed.
+</Accordion>
+
+<Accordion title="Import errors on Windows">
+**Error**: `DLL load failed`
+
+**Solution**: Either bundle DLLs or add to PATH:
+```bash
+set PYARROW_BUNDLE_ARROW_CPP=1
+# OR
+set PATH=%ARROW_HOME%\bin;%PATH%
+```
+</Accordion>
+
+<Accordion title="Conda conflicts">
+**Error**: Build failures with conda installed
+
+**Solution**: Explicitly set dependency source:
+```bash
+cmake -DARROW_DEPENDENCY_SOURCE=CONDA ...
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="C++ Build Guide" icon="code" href="/developers/building-cpp">
+  Learn more about Arrow C++ build options
+</Card>
+
+<Card title="Development Workflow" icon="code-branch">
+  Contributing to PyArrow
+</Card>
+
+<Card title="Testing Guide" icon="vial">
+  Running and writing tests
+</Card>
+
+<Card title="PyArrow Documentation" icon="book" href="https://arrow.apache.org/docs/python/">
+  Python API reference
+</Card>
+
+</CardGroup>

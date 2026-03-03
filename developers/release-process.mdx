@@ -1,0 +1,556 @@
+---
+title: Release Process
+description: Complete guide to the Apache Arrow release management process for Release Managers and contributors
+---
+
+This guide provides comprehensive information on the Apache Arrow release process. It serves as both a learning resource and a detailed checklist for Release Managers performing releases.
+
+<Note>
+  The Release Manager must have at least **committer status**. Some tasks require **PMC membership** and are marked accordingly throughout this guide.
+</Note>
+
+## Overview
+
+The Apache Arrow release follows the [Apache Software Foundation Release Policy](https://www.apache.org/legal/release-policy.html).
+
+### Release Principles
+
+- Releases are created from maintenance branches
+- Feature freeze occurs when the maintenance branch is created
+- Only bug fixes are accepted after feature freeze (unless community consensus allows an exception)
+- Issues labeled as `blocker` must be resolved before creating a release candidate
+- Pull requests are voted on by the PMC, requiring a net of 3 +1 votes from PMC members
+
+## Prerequisites
+
+<AccordionGroup>
+  <Accordion title="Required Tools and Access">
+    - Install [Archery](archery) utility: `pip install -e dev/archery`
+    - Build requirements for C++ and C GLib installed
+    - `en_US.UTF-8` locale installed (verify with `locale -a`)
+    - Python 3 installed as `python`
+    - Docker and Docker Compose installed
+    - GitHub CLI (`gh`) installed
+    - [Crossbow](crossbow) configured
+  </Accordion>
+
+  <Accordion title="GPG Key Setup">
+    You need a GPG key in the Apache Web of Trust to sign artifacts.
+
+    <Steps>
+      <Step title="Set default GPG key">
+        If you have multiple GPG keys, set the correct one in `~/.gnupg/gpg.conf`:
+
+        ```
+        default-key ${YOUR_GPG_KEY_ID}
+        ```
+      </Step>
+
+      <Step title="Add key to SVN repositories">
+        Add your GPG key to both:
+        - https://dist.apache.org/repos/dist/dev/arrow/
+        - https://dist.apache.org/repos/dist/release/arrow/
+
+        (Requires PMC membership)
+      </Step>
+
+      <Step title="Setup GPG agent">
+        ```bash
+        source dev/release/setup-gpg-agent.sh
+        ```
+      </Step>
+    </Steps>
+  </Accordion>
+
+  <Accordion title="Environment Configuration">
+    Create `dev/release/.env` from `dev/release/.env.example` and configure the variables as described in the example file.
+  </Accordion>
+
+  <Accordion title="Build Environment">
+    - **No Arrow environment variables** should be defined except `CC` or `CXX` if building with a specific compiler
+    - Ensure you have adequate RAM:
+      - Minimal build: 1GB
+      - Minimal debug build with tests: 4GB  
+      - Full build: 8GB
+  </Accordion>
+</AccordionGroup>
+
+## Preparing for a Release
+
+<Steps>
+  <Step title="Communicate with the community">
+    In advance of the release date, announce the upcoming release via:
+    - Zulip
+    - Mailing list
+    - Bi-weekly community call
+
+    Propose a **feature freeze date** when the maintenance branch will be created.
+  </Step>
+
+  <Step title="Create feature freeze">
+    After feature freeze, no new features are allowed unless there's community consensus. Only bug fixes will be accepted.
+  </Step>
+
+  <Step title="Resolve blockers">
+    All issues labeled `blocker` must be resolved before creating the first release candidate.
+  </Step>
+
+  <Step title="Ensure proper milestones">
+    Verify that resolved GitHub issues have the appropriate milestone set for proper changelog generation:
+
+    ```bash
+    archery release curate <version>
+    ```
+
+    The report shows any issues with incorrect version numbers.
+  </Step>
+
+  <Step title="Create next milestone">
+    Ensure a major version milestone for the follow-up release exists on GitHub. This is automatically used by the merge script.
+  </Step>
+</Steps>
+
+## Creating a Release Candidate
+
+### Initial Release Candidate
+
+For the first RC of a major release, create a maintenance branch from main.
+
+<Steps>
+  <Step title="Clean up local environment">
+    ```bash
+    # Delete any existing local tags
+    git tag -d apache-arrow-<version>
+
+    # Setup GPG agent
+    source dev/release/setup-gpg-agent.sh
+    ```
+  </Step>
+
+  <Step title="Create maintenance branch">
+    ```bash
+    # Execute from an up-to-date main branch
+    # This creates a branch called maint-X.Y.Z locally
+    # X.Y.Z = Major.Minor.Patch (e.g., 9.0.0)
+    archery release cherry-pick X.Y.Z --execute
+
+    # Push the maintenance branch
+    git push -u upstream maint-X.Y.Z
+    ```
+  </Step>
+
+  <Step title="Create release candidate branch and tag">
+    ```bash
+    # Start from the maintenance branch
+    git checkout maint-X.Y.Z
+
+    # Create RC branch and tag
+    # <rc-number> starts at 0 (so first RC: 0)
+    # On macOS, install gnu-sed: brew install gnu-sed
+    dev/release/01-prepare.sh <version> <next-version> <rc-number>
+
+    # Example: dev/release/01-prepare.sh 9.0.0 10.0.0 0
+
+    # Push the RC tag
+    git push -u upstream apache-arrow-<version>-rc<rc-number>
+
+    # Push the RC branch (triggers verification jobs)
+    git push -u upstream release-<version>-rc<rc-number>
+    ```
+
+    This triggers GitHub Actions workflows:
+    - `verify-rc.yml`: Verifies the release candidate
+    - `release_candidate.yml`: Signs source code and creates a GitHub pre-release
+  </Step>
+
+  <Step title="Build and submit binaries">
+    ```bash
+    # Upload source and signatures to SVN (requires PMC member)
+    dev/release/02-source.sh <version> <rc-number>
+
+    # Submit binary tasks using Crossbow
+    dev/release/03-binary-submit.sh <version> <rc-number>
+    # Note the crossbow-build-id from output
+
+    # Wait for Crossbow jobs to finish
+    archery crossbow status <crossbow-build-id>
+
+    # Download produced binaries
+    dev/release/04-binary-download.sh <version> <rc-number>
+
+    # Sign and upload binaries (requires PMC member)
+    dev/release/05-binary-upload.sh <version> <rc-number>
+
+    # Sign and upload MATLAB artifacts (requires PMC member)
+    dev/release/06-matlab-upload.sh <version> <rc-number>
+
+    # Publish GitHub Release
+    dev/release/07-publish-gh-release.sh <version> <rc-number>
+
+    # Start binary verification
+    dev/release/08-binary-verify.sh <version> <rc-number>
+    ```
+  </Step>
+
+  <Step title="Start the vote">
+    Once automatic verification passes, start the vote thread on dev@arrow.apache.org:
+
+    ```bash
+    # Generate email template
+    SOURCE_DEFAULT=0 SOURCE_VOTE=1 dev/release/02-source.sh <version> <rc-number>
+    ```
+
+    Voting requires:
+    - Net of 3 +1 votes from PMC members
+    - Vote open for at least 72 hours
+    - Cannot be vetoed
+  </Step>
+</Steps>
+
+### Follow-up Release Candidates
+
+If issues are found during verification:
+
+<Steps>
+  <Step title="Update maintenance branch">
+    ```bash
+    # Dry-run to see which commits will be cherry-picked
+    archery release cherry-pick X.Y.Z --continue
+
+    # Update the maintenance branch
+    archery release cherry-pick X.Y.Z --continue --execute
+
+    # Push updates
+    git push -u upstream maint-X.Y.Z
+    ```
+  </Step>
+
+  <Step title="Create new RC">
+    Repeat the RC creation steps with an incremented `<rc-number>` (e.g., 1, 2, 3...).
+  </Step>
+</Steps>
+
+## Patch Releases
+
+Patch releases are created for major breaking issues like security fixes or broken packages.
+
+<Steps>
+  <Step title="Request patch release">
+    Any developer can request a patch release by emailing dev@arrow.apache.org with the reason. Consensus and a willing Release Manager are required.
+  </Step>
+
+  <Step title="Tag issues for backport">
+    Committers tag issues for the next patch release using the `backport-candidate` label.
+  </Step>
+
+  <Step title="Create patch release checklist">
+    - Create milestone
+    - Create maintenance branch from previous release
+    - Include the issue requiring the patch
+    - Add new milestone to issues with `backport-candidate` label
+    - Cherry-pick issues into maintenance branch
+  </Step>
+
+  <Step title="Follow RC process">
+    Follow the standard RC creation process for the patch release.
+  </Step>
+</Steps>
+
+## Post-Release Tasks
+
+After the release vote passes, complete these tasks:
+
+<Steps>
+  <Step title="Update milestone">
+    - Set the milestone date on GitHub
+    - Mark milestone as "Closed"
+  </Step>
+
+  <Step title="Merge release branch (patches only)">
+    For patch releases, merge the release branch to maintenance:
+
+    ```bash
+    git checkout maint-X.Y.Z
+    git merge release-X.Y.Z-rcN
+    git push -u upstream maint-X.Y.Z
+    ```
+  </Step>
+
+  <Step title="Push release tag">
+    ```bash
+    dev/release/post-01-tag.sh <version> <rc-number>
+    ```
+  </Step>
+
+  <Step title="Upload to Subversion (PMC)">
+    ```bash
+    dev/release/post-02-upload.sh <version> <rc-number>
+    ```
+  </Step>
+
+  <Step title="Upload binaries to Artifactory">
+    ```bash
+    dev/release/post-03-binary.sh <version> <rc-number>
+    ```
+  </Step>
+
+  <Step title="Update website">
+    ```bash
+    # Prepare arrow-site fork (one-time setup)
+    git clone git@github.com:<YOUR_GITHUB_ID>/arrow-site.git ../arrow-site
+    cd ../arrow-site
+    git remote add upstream git@github.com:apache/arrow-site.git
+    cd -
+
+    # Generate release note and update latest release info
+    dev/release/post-04-website.sh <OLD_VERSION> <NEW_VERSION>
+    ```
+
+    This creates a branch in your fork. Open a PR from that branch.
+  </Step>
+
+  <Step title="Update GitHub Release Notes">
+    After the website PR merges:
+
+    ```bash
+    dev/release/post-05-update-gh-release-notes.sh <version>
+    ```
+  </Step>
+
+  <Step title="Update package managers">
+    <Tabs>
+      <Tab title="Homebrew">
+        ```bash
+        # One-time setup
+        cd "$(brew --repository homebrew/core)"
+        git remote add <YOUR_GITHUB_ID> git@github.com:<YOUR_GITHUB_ID>/homebrew-core.git
+        cd -
+
+        # Update Homebrew
+        dev/release/post-12-homebrew.sh <version> <YOUR_GITHUB_ID>
+        ```
+
+        Open PR with title: `apache-arrow, apache-arrow-glib: X.Y.Z`
+      </Tab>
+
+      <Tab title="MSYS2">
+        ```bash
+        # One-time setup
+        git clone git@github.com:<YOUR_GITHUB_ID>/MINGW-packages.git ../MINGW-packages
+        cd ../MINGW-packages
+        git remote add upstream https://github.com/msys2/MINGW-packages.git
+        cd -
+
+        # Update MSYS2
+        dev/release/post-11-msys2.sh <version> ../MINGW-packages
+        ```
+
+        Open PR with title: `arrow: Update to X.Y.Z`
+      </Tab>
+
+      <Tab title="vcpkg">
+        ```bash
+        # One-time setup
+        git clone git@github.com:<YOUR_GITHUB_ID>/vcpkg.git ../vcpkg
+        cd ../vcpkg
+        ./bootstrap-vcpkg.sh
+        git remote add upstream https://github.com/microsoft/vcpkg.git
+        cd -
+
+        # Update vcpkg
+        dev/release/post-13-vcpkg.sh <version> ../vcpkg
+        ```
+
+        Open PR with title: `[arrow] Update to X.Y.Z`
+      </Tab>
+
+      <Tab title="Conan">
+        ```bash
+        # One-time setup
+        git clone git@github.com:<YOUR_GITHUB_ID>/conan-center-index.git ../conan-center-index
+        cd ../conan-center-index
+        git remote add upstream https://github.com/conan-io/conan-center-index.git
+        cd -
+
+        # Update Conan
+        dev/release/post-14-conan.sh <version> ../conan-center-index
+        ```
+
+        Open PR on your browser
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Upload to package repositories">
+    <Tabs>
+      <Tab title="RubyGems">
+        Requires account on https://rubygems.org/ with owner permissions.
+
+        To add new owners:
+        ```bash
+        dev/release/account-ruby.sh <NEW_ACCOUNT>
+        ```
+
+        Upload (after Homebrew and MSYS2 are updated):
+        ```bash
+        dev/release/post-06-ruby.sh <version>
+        ```
+      </Tab>
+
+      <Tab title="PyPI">
+        ```bash
+        dev/release/post-09-python.sh <version>
+        ```
+      </Tab>
+
+      <Tab title="CRAN (R)">
+        Follow the [packaging checklist](https://github.com/apache/arrow/blob/main/r/PACKAGING.md):
+
+        1. Create draft PRs to update binary dependencies
+        2. Wait for Jeroen to build and publish artifacts
+        3. Run pre-submission checks
+        4. Submit to CRAN via web form
+        5. Wait for email confirmation
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Update documentation">
+    ```bash
+    # Prepare arrow-site fork if not already done
+    git clone git@github.com:<YOUR_GITHUB_ID>/arrow-site.git ../arrow-site
+    cd ../arrow-site
+    git remote add upstream git@github.com:apache/arrow-site.git
+    cd -
+
+    # Upload generated documentation
+    dev/release/post-08-docs.sh <NEW_VERSION> <OLD_VERSION>
+    ```
+
+    Create PR targeting the `asf-site` branch.
+  </Step>
+
+  <Step title="Bump versions">
+    ```bash
+    dev/release/post-10-bump-versions.sh <VERSION> <NEXT_VERSION>
+    ```
+
+    Set `BUMP_TAG=0` and `BUMP_PUSH=0` to review before pushing.
+  </Step>
+
+  <Step title="Update Arrow Cookbook">
+    Follow [the documentation](https://github.com/apache/arrow-cookbook/tree/main/dev/release) in the Arrow Cookbook repository.
+  </Step>
+
+  <Step title="Announce the release">
+    Write an announcement (see [example](https://lists.apache.org/thread/6rkjwvyjjfodrxffllh66pcqnp729n3k)) and send to:
+    - announce@apache.org (must send from your @apache.org email)
+    - dev@arrow.apache.org
+  </Step>
+
+  <Step title="Publish blog post">
+    1. Clone https://github.com/apache/arrow-site
+    2. Create new branch for blog post PR
+    3. Duplicate recent blog post in `_posts/`
+    4. Update filename and YAML metadata with new release date (GMT)
+    5. Update content as needed
+    6. Create PR and request community help filling in details
+  </Step>
+
+  <Step title="Announce on social media">
+    Post about the release on official accounts (PMC members have access):
+    - BlueSky: [@arrow.apache.org](https://bsky.app/profile/arrow.apache.org)
+    - LinkedIn: https://www.linkedin.com/company/apache-arrow/
+  </Step>
+
+  <Step title="Add to Apache Reporter">
+    Add release data to [Apache Reporter](https://reporter.apache.org/addrelease.html?arrow).
+  </Step>
+
+  <Step title="Remove old artifacts (PMC)">
+    Remove RC artifacts and old releases per [ASF policy](https://infra.apache.org/release-download-pages.html#current-and-older-releases):
+
+    ```bash
+    dev/release/post-07-remove-old-artifacts.sh
+    ```
+  </Step>
+</Steps>
+
+## Testing Before Release
+
+Some Release Managers prefer testing before creating the first RC:
+
+<Steps>
+  <Step title="Create dummy PR">
+    Create a PR from `maint-X.Y.Z` to `main` titled "WIP: Dummy PR to check maint-X.Y.Z status".
+  </Step>
+
+  <Step title="Trigger Crossbow jobs">
+    Comment on the PR:
+    ```
+    @github-actions crossbow submit --group verify-rc-source
+    @github-actions crossbow submit --group packaging
+    ```
+  </Step>
+
+  <Step title="Review results">
+    Check that all jobs pass before creating the official RC.
+  </Step>
+</Steps>
+
+## Verification
+
+See the [Release Verification Guide](release-verification) for detailed steps on verifying:
+
+- Source release integrity
+- Binary package functionality
+- Signature verification
+- License compliance
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="GPG signing issues on macOS">
+    If you get "ioctl" errors when signing:
+
+    ```bash
+    echo "UPDATESTARTUPTTY" | gpg-connect-agent
+    ```
+
+    Then retry the signing command.
+  </Accordion>
+
+  <Accordion title="Cherry-pick conflicts">
+    If automated cherry-picking fails:
+
+    1. Manually cherry-pick the problematic commits
+    2. Resolve conflicts
+    3. Continue the release process
+    4. Note: PRs without corresponding GitHub issues must be cherry-picked manually
+  </Accordion>
+
+  <Accordion title="Crossbow failures">
+    Check the Crossbow dashboard for specific job failures. Common issues:
+
+    - Timeout: Rerun the job
+    - Dependency version mismatch: Update the build scripts
+    - Platform-specific build failure: May need architecture-specific fixes
+  </Accordion>
+</AccordionGroup>
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="ASF Release Policy" icon="gavel" href="https://www.apache.org/legal/release-policy.html">
+    Official Apache Software Foundation release guidelines
+  </Card>
+  <Card title="Archery Utility" icon="toolbox" href="archery">
+    Arrow's development and release management tool
+  </Card>
+  <Card title="Release Verification" icon="check-circle" href="release-verification">
+    Guide to verifying Arrow releases
+  </Card>
+  <Card title="Crossbow" icon="crosshairs" href="crossbow">
+    Automated build and test system for releases
+  </Card>
+</CardGroup>

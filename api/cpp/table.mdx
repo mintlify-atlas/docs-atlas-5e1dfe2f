@@ -1,0 +1,292 @@
+---
+title: Table Classes
+description: API reference for Apache Arrow C++ table classes
+---
+
+# Table Classes
+
+Table classes represent tabular data as a collection of chunked columnar arrays.
+
+## Table
+
+Logical table as a sequence of chunked arrays.
+
+```cpp
+class Table
+```
+
+### Construction
+
+<ResponseField name="Make" type="std::shared_ptr<Table>">
+  <ParamField path="schema" type="std::shared_ptr<Schema>" required>
+    The table schema (column types)
+  </ParamField>
+  <ParamField path="columns" type="std::vector<std::shared_ptr<ChunkedArray>>" required>
+    The table's columns as chunked arrays
+  </ParamField>
+  <ParamField path="num_rows" type="int64_t">
+    Number of rows in table, -1 (default) to infer from columns
+  </ParamField>
+  
+  Constructs a Table from schema and columns. If columns is zero-length, the table's number of rows is zero
+</ResponseField>
+
+<ResponseField name="MakeEmpty" type="Result<std::shared_ptr<Table>>">
+  <ParamField path="schema" type="std::shared_ptr<Schema>" required>
+    The schema of the empty table
+  </ParamField>
+  <ParamField path="pool" type="MemoryPool*">
+    Memory pool for allocations
+  </ParamField>
+  
+  Creates an empty Table with a single empty chunk per column
+</ResponseField>
+
+<ResponseField name="FromRecordBatches" type="Result<std::shared_ptr<Table>>">
+  <ParamField path="schema" type="std::shared_ptr<Schema>" required>
+    Schema for each batch
+  </ParamField>
+  <ParamField path="batches" type="const std::vector<std::shared_ptr<RecordBatch>>&" required>
+    Vector of record batches
+  </ParamField>
+  
+  Constructs a Table from RecordBatches using supplied schema. May have zero record batches
+</ResponseField>
+
+<ResponseField name="FromChunkedStructArray" type="Result<std::shared_ptr<Table>>">
+  <ParamField path="array" type="const std::shared_ptr<ChunkedArray>&" required>
+    A chunked StructArray
+  </ParamField>
+  
+  Constructs a Table from a chunked StructArray. One column will be produced for each field
+</ResponseField>
+
+### Properties
+
+<ResponseField name="schema" type="std::shared_ptr<Schema>">
+  Returns the table schema
+</ResponseField>
+
+<ResponseField name="num_rows" type="int64_t">
+  Returns the number of rows (equal to each column's logical length)
+</ResponseField>
+
+<ResponseField name="num_columns" type="int">
+  Returns the number of columns in the table
+</ResponseField>
+
+<ResponseField name="column" type="std::shared_ptr<ChunkedArray>">
+  <ParamField path="i" type="int" required>
+    Column index
+  </ParamField>
+  
+  Returns a column by index
+</ResponseField>
+
+<ResponseField name="columns" type="const std::vector<std::shared_ptr<ChunkedArray>>&">
+  Returns vector of all columns for table
+</ResponseField>
+
+<ResponseField name="field" type="std::shared_ptr<Field>">
+  <ParamField path="i" type="int" required>
+    Field index
+  </ParamField>
+  
+  Returns a column's field by index
+</ResponseField>
+
+<ResponseField name="GetColumnByName" type="std::shared_ptr<ChunkedArray>">
+  <ParamField path="name" type="const std::string&" required>
+    Field name
+  </ParamField>
+  
+  Returns a column by name, or nullptr if not found
+</ResponseField>
+
+### Operations
+
+<ResponseField name="Slice" type="std::shared_ptr<Table>">
+  <ParamField path="offset" type="int64_t" required>
+    Index of the first row in the slice
+  </ParamField>
+  <ParamField path="length" type="int64_t">
+    Number of rows in the slice
+  </ParamField>
+  
+  Constructs a zero-copy slice of the table with the indicated offset and length
+</ResponseField>
+
+<ResponseField name="AddColumn" type="Result<std::shared_ptr<Table>>">
+  <ParamField path="i" type="int" required>
+    Position to insert column
+  </ParamField>
+  <ParamField path="field" type="std::shared_ptr<Field>" required>
+    Field metadata for the column
+  </ParamField>
+  <ParamField path="column" type="std::shared_ptr<ChunkedArray>" required>
+    Column data
+  </ParamField>
+  
+  Adds a column to the table at position i, producing a new Table
+</ResponseField>
+
+<ResponseField name="RemoveColumn" type="Result<std::shared_ptr<Table>>">
+  <ParamField path="i" type="int" required>
+    Column index to remove
+  </ParamField>
+  
+  Removes a column from the table, producing a new Table
+</ResponseField>
+
+<ResponseField name="SetColumn" type="Result<std::shared_ptr<Table>>">
+  <ParamField path="i" type="int" required>
+    Column index to replace
+  </ParamField>
+  <ParamField path="field" type="std::shared_ptr<Field>" required>
+    Field metadata for the column
+  </ParamField>
+  <ParamField path="column" type="std::shared_ptr<ChunkedArray>" required>
+    Column data
+  </ParamField>
+  
+  Replaces a column in the table, producing a new Table
+</ResponseField>
+
+<ResponseField name="RenameColumns" type="Result<std::shared_ptr<Table>>">
+  <ParamField path="names" type="const std::vector<std::string>&" required>
+    New column names
+  </ParamField>
+  
+  Renames columns with provided names
+</ResponseField>
+
+<ResponseField name="SelectColumns" type="Result<std::shared_ptr<Table>>">
+  <ParamField path="indices" type="const std::vector<int>&" required>
+    Column indices to select
+  </ParamField>
+  
+  Returns a new table with specified columns
+</ResponseField>
+
+<ResponseField name="Flatten" type="Result<std::shared_ptr<Table>>">
+  <ParamField path="pool" type="MemoryPool*">
+    Memory pool for allocations
+  </ParamField>
+  
+  Flattens the table, producing a new Table. Any column with a struct type will be flattened into multiple columns
+</ResponseField>
+
+<ResponseField name="CombineChunks" type="Result<std::shared_ptr<Table>>">
+  <ParamField path="pool" type="MemoryPool*">
+    Memory pool for allocations
+  </ParamField>
+  
+  Makes a new table by combining the chunks. All chunks in each ChunkedArray are concatenated into zero or one chunk. Binary columns may have multiple chunks to avoid buffer overflow
+</ResponseField>
+
+<ResponseField name="CombineChunksToBatch" type="Result<std::shared_ptr<RecordBatch>>">
+  <ParamField path="pool" type="MemoryPool*">
+    Memory pool for allocations
+  </ParamField>
+  
+  Makes a new record batch by combining the chunks. All chunks are concatenated into a single chunk
+</ResponseField>
+
+### Validation
+
+<ResponseField name="Validate" type="Status">
+  Performs cheap validation checks to determine obvious inconsistencies within the table's schema and internal data. O(k*m) where k is the total number of field descendants and m is the number of chunks
+</ResponseField>
+
+<ResponseField name="ValidateFull" type="Status">
+  Performs extensive validation checks. O(k*n) where k is the total number of field descendants and n is the number of rows
+</ResponseField>
+
+<ResponseField name="Equals" type="bool">
+  <ParamField path="other" type="const Table&" required>
+    Table to compare with
+  </ParamField>
+  <ParamField path="check_metadata" type="bool">
+    If true, schema metadata will be compared
+  </ParamField>
+  
+  Determines if two tables are equal
+</ResponseField>
+
+---
+
+## ConcatenateTables
+
+Constructs a new table from multiple input tables.
+
+```cpp
+Result<std::shared_ptr<Table>> ConcatenateTables(
+    const std::vector<std::shared_ptr<Table>>& tables,
+    ConcatenateTablesOptions options = ConcatenateTablesOptions::Defaults(),
+    MemoryPool* memory_pool = default_memory_pool())
+```
+
+<ParamField path="tables" type="const std::vector<std::shared_ptr<Table>>&" required>
+  Vector of tables to concatenate
+</ParamField>
+
+<ParamField path="options" type="ConcatenateTablesOptions">
+  Options for unifying schemas
+</ParamField>
+
+<ParamField path="memory_pool" type="MemoryPool*">
+  Memory pool for allocations
+</ParamField>
+
+Tables are concatenated in order and row order within tables is preserved. The new table is assembled from existing column chunks without copying if schemas are identical.
+
+### ConcatenateTablesOptions
+
+```cpp
+struct ConcatenateTablesOptions {
+  bool unify_schemas = false;
+  Field::MergeOptions field_merge_options = Field::MergeOptions::Defaults();
+}
+```
+
+<ParamField path="unify_schemas" type="bool">
+  If true, schemas will be unified with fields of the same name being merged. Each table will be promoted to the unified schema before concatenation
+</ParamField>
+
+<ParamField path="field_merge_options" type="Field::MergeOptions">
+  Options to control how fields are merged when unifying schemas. Ignored if unify_schemas is false
+</ParamField>
+
+---
+
+## TableBatchReader
+
+Computes a stream of record batches from a (possibly chunked) Table.
+
+```cpp
+class TableBatchReader : public RecordBatchReader
+```
+
+<ResponseField name="TableBatchReader" type="">
+  <ParamField path="table" type="const Table&" required>
+    Table to read from
+  </ParamField>
+  
+  Constructs a TableBatchReader for the given table. The conversion is zero-copy: each record batch is a view over a slice of the table's columns
+</ResponseField>
+
+<ResponseField name="set_chunksize" type="void">
+  <ParamField path="chunksize" type="int64_t" required>
+    Maximum number of rows per batch
+  </ParamField>
+  
+  Sets the desired maximum number of rows for record batches. Actual batches may be smaller depending on chunking characteristics
+</ResponseField>
+
+<ResponseField name="ReadNext" type="Status">
+  <ParamField path="out" type="std::shared_ptr<RecordBatch>*" required>
+    Output parameter for the next batch
+  </ParamField>
+  
+  Reads the next record batch from the table
+</ResponseField>

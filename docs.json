@@ -1,122 +1,248 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Apache Arrow",
+  "theme": "sequoia",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#D95F02",
+    "light": "#FDB863",
+    "dark": "#B34700"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/apache/arrow"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/apache/arrow"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Overview",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Introduction",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "why-arrow",
+              "key-concepts"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Format Specification",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "format/columnar-format",
+              "format/ipc-format",
+              "format/flight-protocol",
+              "format/data-types"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Architecture",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
-            ]
-          },
-          {
-            "group": "AI tools",
-            "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "architecture/memory-model",
+              "architecture/type-system",
+              "architecture/compute-engine"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Getting Started",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Installation",
             "pages": [
-              "api-reference/introduction"
+              "getting-started/installation",
+              "getting-started/install-cpp",
+              "getting-started/install-python",
+              "getting-started/install-r",
+              "getting-started/install-ruby"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Quickstart Guides",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "getting-started/quickstart-cpp",
+              "getting-started/quickstart-python",
+              "getting-started/quickstart-r",
+              "getting-started/quickstart-ruby"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Language Libraries",
+        "groups": [
+          {
+            "group": "C++",
+            "pages": [
+              "cpp/overview",
+              "cpp/building",
+              "cpp/arrays-tables",
+              "cpp/io-memory",
+              "cpp/compute",
+              "cpp/acero"
+            ]
+          },
+          {
+            "group": "Python",
+            "pages": [
+              "python/overview",
+              "python/installation",
+              "python/tables-arrays",
+              "python/compute",
+              "python/dataset",
+              "python/parquet"
+            ]
+          },
+          {
+            "group": "R",
+            "pages": [
+              "r/overview",
+              "r/installation",
+              "r/data-wrangling",
+              "r/reading-writing",
+              "r/dataset"
+            ]
+          },
+          {
+            "group": "Ruby",
+            "pages": [
+              "ruby/overview",
+              "ruby/installation",
+              "ruby/basic-usage"
+            ]
+          },
+          {
+            "group": "Other Languages",
+            "pages": [
+              "languages/c-glib",
+              "languages/external-libraries"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Working with Data",
+            "pages": [
+              "guides/reading-writing",
+              "guides/memory-management",
+              "guides/data-types",
+              "guides/schemas"
+            ]
+          },
+          {
+            "group": "File Formats",
+            "pages": [
+              "guides/parquet",
+              "guides/csv",
+              "guides/json",
+              "guides/orc",
+              "guides/feather"
+            ]
+          },
+          {
+            "group": "Data Processing",
+            "pages": [
+              "guides/compute-functions",
+              "guides/acero-query-engine",
+              "guides/datasets",
+              "guides/expressions"
+            ]
+          },
+          {
+            "group": "Data Transfer",
+            "pages": [
+              "guides/flight-rpc",
+              "guides/flight-sql",
+              "guides/ipc-streaming",
+              "guides/c-data-interface"
+            ]
+          },
+          {
+            "group": "Advanced Topics",
+            "pages": [
+              "guides/gandiva",
+              "guides/cuda-gpu",
+              "guides/extension-types",
+              "guides/substrait"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "C++ API",
+            "pages": [
+              "api/cpp/array",
+              "api/cpp/table",
+              "api/cpp/datatype",
+              "api/cpp/compute",
+              "api/cpp/io",
+              "api/cpp/filesystem"
+            ]
+          },
+          {
+            "group": "Python API",
+            "pages": [
+              "api/python/array",
+              "api/python/table",
+              "api/python/schema",
+              "api/python/compute",
+              "api/python/dataset",
+              "api/python/filesystem"
+            ]
+          },
+          {
+            "group": "R API",
+            "pages": [
+              "api/r/array",
+              "api/r/table",
+              "api/r/dataset"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Developer Guide",
+        "groups": [
+          {
+            "group": "Contributing",
+            "pages": [
+              "developers/contributing",
+              "developers/code-of-conduct",
+              "developers/code-review"
+            ]
+          },
+          {
+            "group": "Building from Source",
+            "pages": [
+              "developers/building-cpp",
+              "developers/building-python",
+              "developers/building-r",
+              "developers/ci-system"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "developers/testing",
+              "developers/benchmarking",
+              "developers/debugging",
+              "developers/release-process"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

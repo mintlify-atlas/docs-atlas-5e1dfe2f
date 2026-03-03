@@ -1,0 +1,473 @@
+---
+title: Key Concepts and Terminology
+description: Essential concepts, terminology, and technical details of the Apache Arrow columnar format
+---
+
+# Key Concepts and Terminology
+
+This page covers the fundamental concepts and terminology you need to understand Apache Arrow's architecture and design.
+
+## Core Terminology
+
+Arrow uses specific terminology that differs from other data systems. Understanding these terms is essential:
+
+### Array / Vector
+
+<Note>
+An **array** (also called a **vector**) is a sequence of values with known length, all having the same type. These terms are used interchangeably across Arrow implementations.
+</Note>
+
+Arrays are the fundamental building blocks of Arrow data:
+
+```python
+import pyarrow as pa
+
+# Create an Int32 array
+array = pa.array([1, 2, 3, 4, 5], type=pa.int32())
+
+print(f"Length: {len(array)}")
+print(f"Type: {array.type}")
+print(f"Null count: {array.null_count}")
+```
+
+### Slot
+
+A **slot** is a single logical value position in an array. Each slot may contain a value or be null.
+
+### Buffer
+
+A **buffer** (or **contiguous memory region**) is a sequential virtual address space with a given length. Any byte can be reached via a single pointer offset.
+
+<Info>
+Buffers are the raw memory backing Arrow data structures. Most arrays consist of multiple buffers (validity, offsets, values).
+</Info>
+
+### Physical Layout vs Data Type
+
+- **Physical Layout**: The underlying memory organization without value semantics
+- **Data Type**: An application-facing semantic type implemented using a physical layout
+
+For example:
+- A 32-bit signed integer array and a 32-bit floating point array share the same physical layout
+- A Decimal128 value uses a 16-byte fixed-size binary layout
+- A Timestamp is stored using a 64-bit fixed-size layout
+
+### Type Categories
+
+**Primitive Type**
+
+A data type with no child types:
+- Fixed bit-width types (Int32, Float64, Boolean)
+- Variable-size binary and string types
+- Null type
+
+**Nested Type**
+
+A data type whose structure depends on one or more child types:
+- List, Struct, Map, Union
+- Example: `List<Int32>` is distinct from `List<Float64>`
+
+**Parametric Type**
+
+A type requiring additional parameters for full specification:
+- All nested types (require child types)
+- Timestamp (requires unit and timezone)
+- Decimal (requires precision and scale)
+
+## Memory Layout Fundamentals
+
+### Buffer Alignment and Padding
+
+<Tip>
+Arrow recommends 64-byte aligned memory allocation, matching Intel AVX-512 SIMD register width for optimal performance.
+</Tip>
+
+Key alignment requirements:
+
+- Buffers should be allocated on 8 or 64-byte aligned addresses
+- Buffer lengths should be padded to multiples of 8 or 64 bytes
+- Alignment ensures optimal SIMD operations and cache utilization
+- Padded bytes don't need specific values
+
+### Array Structure
+
+Every Arrow array consists of:
+
+<Steps>
+  <Step title="Data Type">
+    The logical type defining value semantics (Int32, Utf8, List, etc.)
+  </Step>
+  
+  <Step title="Sequence of Buffers">
+    One or more memory buffers containing the actual data
+  </Step>
+  
+  <Step title="Length">
+    A 64-bit signed integer representing the number of elements
+  </Step>
+  
+  <Step title="Null Count">
+    A 64-bit signed integer counting null values
+  </Step>
+  
+  <Step title="Optional Dictionary">
+    For dictionary-encoded arrays only
+  </Step>
+  
+  <Step title="Child Arrays">
+    For nested types (List, Struct, Union, etc.)
+  </Step>
+</Steps>
+
+### Validity Bitmaps
+
+Most array types use a **validity bitmap** (also called a **null bitmap**) to track which values are null:
+
+```
+Values:  [0, 1, null, 2, null, 3]
+
+Bitmap (LSB numbering):
+j mod 8   7  6  5  4  3  2  1  0
+          0  0  1  0  1  0  1  1
+```
+
+Key properties:
+
+- 1 bit = not null (valid)
+- 0 bit = null (invalid)
+- Uses least-significant bit (LSB) numbering
+- Arrays with zero null count may omit the validity bitmap
+- Bitmap size: at least `⌈length / 8⌉` bytes, padded to 64 bytes
+
+<Note>
+Access validity using: `is_valid[j] = bitmap[j / 8] & (1 << (j % 8))`
+</Note>
+
+## Physical Memory Layouts
+
+Arrow defines several memory layouts optimized for different use cases:
+
+### Fixed-Size Primitive Layout
+
+Used for types with constant byte width:
+
+**Example: Int32 Array `[1, null, 2, 4, 8]`**
+
+```
+Length: 5, Null count: 1
+
+Validity bitmap buffer:
+| Byte 0           | Bytes 1-63 |
+|------------------|-----------|
+| 00011101         | 0 (pad)   |
+
+Value Buffer:
+| Bytes 0-3 | Bytes 4-7    | Bytes 8-11 | Bytes 12-15 | Bytes 16-19 | Bytes 20-63 |
+|-----------|--------------|------------|-------------|-------------|-------------|
+| 1         | unspecified  | 2          | 4           | 8           | (padding)   |
+```
+
+<Info>
+Null slots don't require specific values in the value buffer. The validity bitmap determines nullness.
+</Info>
+
+### Variable-Size Binary Layout
+
+Used for strings and binary data with varying lengths:
+
+**Components:**
+- Validity bitmap (1 bit per element)
+- Offsets buffer (`length + 1` Int32 or Int64 values)
+- Data buffer (actual bytes)
+
+**Example: VarBinary `['joe', null, null, 'mark']`**
+
+```
+Length: 4, Null count: 2
+
+Validity bitmap:
+| Byte 0   | Bytes 1-63 |
+|----------|-----------|
+| 00001001 | 0 (pad)   |
+
+Offsets buffer (Int32):
+| Bytes 0-19        | Bytes 20-63 |
+|-------------------|-----------|
+| 0, 3, 3, 3, 7     | (padding) |
+
+Data buffer:
+| Bytes 0-6 | Bytes 7-63 |
+|-----------|-----------|
+| joemark   | (padding) |
+```
+
+Offset calculation:
+```python
+slot_position = offsets[j]
+slot_length = offsets[j + 1] - offsets[j]
+```
+
+### Binary View Layout
+
+<Note>
+New in Arrow Columnar Format 1.4
+</Note>
+
+Optimized for strings with efficient prefix comparisons:
+
+**View Structure (16 bytes):**
+
+```
+Short strings (length ≤ 12 bytes):
+| Bytes 0-3 | Bytes 4-15               |
+|-----------|-------------------------|
+| length    | data (padded with 0)    |
+
+Long strings (length > 12 bytes):
+| Bytes 0-3 | Bytes 4-7 | Bytes 8-11   | Bytes 12-15 |
+|-----------|-----------|--------------|-------------|
+| length    | prefix    | buffer index | offset      |
+```
+
+<Tip>
+The 4-byte prefix enables fast string comparison, as many comparisons can be resolved by checking only the prefix.
+</Tip>
+
+### List Layout
+
+Nested type for variable-length sequences:
+
+**Example: `List<Int8>` with values `[[12, -7, 25], null, [0, -127, 127, 50], []]`**
+
+```
+Length: 4, Null count: 1
+
+Validity bitmap:
+| Byte 0   | Bytes 1-63 |
+|----------|-----------|
+| 00001101 | 0 (pad)   |
+
+Offsets buffer (Int32):
+| Bytes 0-3 | Bytes 4-7 | Bytes 8-11 | Bytes 12-15 | Bytes 16-19 | Bytes 20-63 |
+|-----------|-----------|------------|-------------|-------------|-----------|
+| 0         | 3         | 3          | 7           | 7           | (padding) |
+
+Values array (Int8Array):
+Length: 7, Null count: 0
+| Bytes 0-6                     | Bytes 7-63 |
+|-------------------------------|-----------|
+| 12, -7, 25, 0, -127, 127, 50  | (padding) |
+```
+
+### Struct Layout
+
+Contains multiple child arrays with named fields:
+
+**Example: `Struct<name: VarBinary, age: Int32>`**
+
+Structs have:
+- Top-level validity bitmap (independent of children)
+- One child array per field
+- All child arrays have the same length
+
+<Info>
+To determine if a child value is valid, take the logical AND of the struct's validity bit and the child array's validity bit.
+</Info>
+
+### Union Layout
+
+Represents values that can be one of several types:
+
+**Dense Union**: Minimal memory overhead (5 bytes per value)
+- Types buffer (8-bit type IDs)
+- Offsets buffer (Int32 offsets into child arrays)
+- Child arrays (one per type variant)
+
+**Sparse Union**: Equal-length child arrays
+- Types buffer only (no offsets)
+- All child arrays have same length as union
+- Faster for vectorized operations
+
+<Note>
+Union types do NOT have a validity bitmap. Nullness is determined by the child arrays.
+</Note>
+
+### Dictionary-Encoded Layout
+
+Efficient representation of data with repeated values:
+
+**Example:**
+```python
+# Original data
+data = ['foo', 'bar', 'foo', 'bar', None, 'baz']
+
+# Dictionary-encoded representation:
+indices = [0, 1, 0, 1, None, 2]  # Int32 indices
+dictionary = ['foo', 'bar', 'baz']  # Unique values
+```
+
+Benefits:
+- Reduced memory usage for categorical data
+- Faster equality comparisons (compare integers instead of strings)
+- Lower bandwidth for data transfer
+
+### Run-End Encoded Layout
+
+<Note>
+New in Arrow Columnar Format 1.3
+</Note>
+
+Efficient encoding for data with long runs of repeated values:
+
+**Example: `[1.0, 1.0, 1.0, 1.0, null, null, 2.0]`**
+
+```
+Length: 7, Null count: 0
+
+Child Arrays:
+  run_ends (Int32): [4, 6, 7]
+  values (Float32): [1.0, null, 2.0]
+```
+
+Run ends represent cumulative lengths:
+- First run: 1.0 repeated 4 times (indices 0-3)
+- Second run: null repeated 2 times (indices 4-5)
+- Third run: 2.0 once (index 6)
+
+<Info>
+Random access is O(log n) using binary search on run_ends, vs O(1) for other layouts.
+</Info>
+
+## Data Type Examples
+
+Here's a comprehensive table of Arrow data types:
+
+| Type Category | Examples | Physical Layout |
+|---------------|----------|----------------|
+| **Integer** | Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64 | Fixed-size Primitive |
+| **Float** | Float32 (single), Float64 (double) | Fixed-size Primitive |
+| **Decimal** | Decimal128, Decimal256 | Fixed-size Primitive |
+| **Boolean** | Boolean | Fixed-size Primitive (bit-packed) |
+| **Temporal** | Date32, Date64, Time32, Time64, Timestamp, Duration, Interval | Fixed-size Primitive |
+| **Binary** | Binary, LargeBinary, BinaryView, FixedSizeBinary | Variable or Fixed-size |
+| **String** | Utf8, LargeUtf8, Utf8View | Variable-size Binary |
+| **List** | List, LargeList, FixedSizeList, ListView, LargeListView | Variable or Fixed-size List |
+| **Nested** | Struct, Map | Struct Layout |
+| **Union** | DenseUnion, SparseUnion | Union Layout |
+| **Special** | Dictionary, RunEndEncoded, Null | Special Layouts |
+
+## Schema and Metadata
+
+### Schema Definition
+
+A **schema** defines the structure of a table:
+
+```python
+import pyarrow as pa
+
+schema = pa.schema([
+    pa.field('id', pa.int64()),
+    pa.field('name', pa.utf8()),
+    pa.field('price', pa.float64()),
+    pa.field('tags', pa.list_(pa.utf8())),
+])
+```
+
+### Field Properties
+
+Each field in a schema has:
+- **Name**: UTF-8 encoded field name
+- **Type**: The Arrow data type
+- **Nullable**: Whether the field can contain nulls
+- **Metadata**: Optional key-value metadata
+
+### Extension Types
+
+Extension types allow custom semantics on standard Arrow types:
+
+```python
+# Define a custom "JSON" type stored as a string
+json_type = pa.extension_type(
+    storage_type=pa.utf8(),
+    extension_name='arrow.json'
+)
+```
+
+<Tip>
+Extension types enable rich application semantics while maintaining Arrow format compatibility.
+</Tip>
+
+## Serialization and IPC
+
+### Arrow IPC Format
+
+The **IPC (Interprocess Communication) format** enables efficient data exchange:
+
+- Based on FlatBuffers for metadata serialization
+- Supports streaming and random-access file formats
+- Preserves zero-copy properties across process boundaries
+- Language-agnostic wire protocol
+
+### Stream Format
+
+Continuous stream of record batches:
+
+```python
+import pyarrow as pa
+
+# Write stream
+with pa.OSFile('data.arrows', 'wb') as sink:
+    writer = pa.RecordBatchStreamWriter(sink, table.schema)
+    writer.write_table(table)
+    writer.close()
+
+# Read stream
+with pa.OSFile('data.arrows', 'rb') as source:
+    reader = pa.RecordBatchStreamReader(source)
+    table = reader.read_all()
+```
+
+### File Format
+
+Random-access file with footer:
+
+```python
+# Write file (also called Feather format)
+with pa.OSFile('data.arrow', 'wb') as sink:
+    writer = pa.RecordBatchFileWriter(sink, table.schema)
+    writer.write_table(table)
+    writer.close()
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use 64-byte alignment">
+    Allocate buffers on 64-byte boundaries for optimal SIMD performance.
+  </Step>
+  
+  <Step title="Prefer signed integers">
+    Use signed integers for dictionary indices and array lengths for better JVM compatibility.
+  </Step>
+  
+  <Step title="Limit array lengths">
+    Keep arrays under 2³¹ - 1 elements for cross-language compatibility.
+  </Step>
+  
+  <Step title="Choose appropriate types">
+    Use BinaryView for long strings with many comparisons, Dictionary encoding for categorical data, and Run-End Encoding for data with long runs.
+  </Step>
+  
+  <Step title="Handle nulls properly">
+    Always check validity bitmaps before accessing values, even for child arrays in nested types.
+  </Step>
+</Steps>
+
+## Next Steps
+
+Now that you understand Arrow's core concepts:
+
+- Read the [complete format specification](https://arrow.apache.org/docs/format/Columnar.html)
+- Explore the [Apache Arrow Cookbook](https://arrow.apache.org/cookbook/)
+- Choose your language implementation from the [documentation](https://arrow.apache.org/docs/)
+- Join the community on the [Arrow mailing list](mailto:dev-subscribe@arrow.apache.org)

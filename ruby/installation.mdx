@@ -1,0 +1,294 @@
+---
+title: Installation and Setup
+description: Install Red Arrow and configure your Ruby environment for Apache Arrow
+---
+
+# Installation and Setup
+
+This guide covers how to install and configure Red Arrow in your Ruby environment.
+
+## Prerequisites
+
+Red Arrow requires the Apache Arrow GLib library to be installed on your system. The installation process varies by platform.
+
+### System Requirements
+
+- Ruby 2.7 or later (or JRuby)
+- Apache Arrow GLib (C library)
+- GObject Introspection library
+
+## Quick Installation
+
+### Using Bundler (Recommended)
+
+The easiest way to install Red Arrow is using Bundler with the `rubygems-requirements-system` plugin, which automatically handles system dependencies.
+
+Add to your `Gemfile`:
+
+```ruby
+plugin "rubygems-requirements-system"
+
+gem "red-arrow"
+```
+
+Then run:
+
+```bash
+bundle install
+```
+
+The plugin will automatically:
+1. Detect your operating system
+2. Install Apache Arrow GLib if needed
+3. Install Red Arrow gem
+
+### Using RubyGems
+
+Install directly with gem:
+
+```bash
+gem install rubygems-requirements-system red-arrow
+```
+
+## Platform-Specific Installation
+
+### macOS with Homebrew
+
+Install Apache Arrow using Homebrew:
+
+```bash
+# Install Apache Arrow C++
+brew install apache-arrow
+
+# Install Apache Arrow GLib
+brew install apache-arrow-glib
+
+# Install Red Arrow
+gem install red-arrow
+```
+
+For development with the latest version:
+
+```bash
+brew install apache-arrow --head
+brew install apache-arrow-glib --head
+```
+
+### Ubuntu/Debian
+
+Add Apache Arrow APT repository and install:
+
+```bash
+# Add Apache Arrow repository
+sudo apt update
+sudo apt install -y -V ca-certificates lsb-release wget
+wget https://apache.jfrog.io/artifactory/arrow/$(lsb_release --id --short | tr 'A-Z' 'a-z')/apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb
+sudo apt install -y -V ./apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb
+sudo apt update
+
+# Install Arrow GLib
+sudo apt install -y -V libarrow-glib-dev
+
+# Install Red Arrow
+gem install red-arrow
+```
+
+### CentOS/RHEL/AlmaLinux
+
+Add Apache Arrow YUM repository:
+
+```bash
+# For CentOS/RHEL 9
+sudo dnf install -y epel-release
+sudo dnf install -y https://apache.jfrog.io/artifactory/arrow/centos/$(cut -d: -f5 /etc/system-release-cpe | cut -d. -f1)/apache-arrow-release-latest.rpm
+sudo dnf install -y arrow-glib-devel
+
+# Install Red Arrow
+gem install red-arrow
+```
+
+### Amazon Linux
+
+```bash
+sudo yum install -y https://apache.jfrog.io/artifactory/arrow/amazon-linux/$(cut -d: -f6 /etc/system-release-cpe)/apache-arrow-release-latest.rpm
+sudo yum install -y arrow-glib-devel
+
+gem install red-arrow
+```
+
+### Fedora
+
+```bash
+sudo dnf install -y libarrow-glib-devel
+gem install red-arrow
+```
+
+### Conda
+
+If you're using Conda:
+
+```bash
+conda install -c conda-forge arrow-c-glib
+gem install red-arrow
+```
+
+### Windows (MSYS2)
+
+```bash
+pacman -S mingw-w64-x86_64-arrow
+gem install red-arrow
+```
+
+## JRuby Installation
+
+For JRuby, Arrow Java libraries are automatically managed:
+
+```ruby
+# Gemfile
+gem "red-arrow", platform: :jruby
+```
+
+The required Java dependencies (`arrow-vector` and `arrow-memory-netty`) are specified in the gemspec and will be resolved automatically.
+
+## Additional Packages
+
+Install additional Red Arrow packages for extended functionality:
+
+### Parquet Support
+
+```bash
+gem install red-parquet
+```
+
+```ruby
+require 'parquet'
+
+table = Arrow::Table.load('data.parquet', format: :parquet)
+```
+
+### Dataset API (S3, Multiple Files)
+
+```bash
+gem install red-arrow-dataset
+```
+
+```ruby
+require 'arrow-dataset'
+
+# Read from S3
+table = Arrow::Table.load(URI('s3://bucket/data.parquet'))
+
+# Read from folder
+table = Arrow::Table.load(URI('file:///path/to/folder/'), format: :parquet)
+```
+
+### CUDA/GPU Support
+
+```bash
+gem install red-arrow-cuda
+```
+
+### Flight RPC
+
+```bash
+gem install red-arrow-flight
+```
+
+### Gandiva (Expression Compiler)
+
+```bash
+gem install red-gandiva
+```
+
+## Verification
+
+Verify your installation:
+
+```ruby
+require 'arrow'
+
+# Check version
+puts Arrow::Version::MAJOR
+puts Arrow::Version::MINOR
+puts Arrow::Version::MICRO
+
+# Create a simple table
+table = Arrow::Table.new('x' => [1, 2, 3])
+puts table.to_s
+```
+
+You should see output like:
+
+```
+     x
+(int64)
+0      1
+1      2
+2      3
+```
+
+## Development Setup
+
+For development work on Red Arrow itself:
+
+```bash
+# Clone repository
+git clone https://github.com/apache/arrow.git
+cd arrow/ruby/red-arrow
+
+# Install dependencies
+bundle install
+
+# Run tests
+bundle exec rake test
+```
+
+### Building from Source
+
+To build Apache Arrow C++ and GLib from source, refer to:
+
+- [Apache Arrow C++ Build Guide](https://arrow.apache.org/docs/developers/cpp/building.html)
+- [Apache Arrow GLib README](https://github.com/apache/arrow/blob/main/c_glib/README.md)
+
+## Troubleshooting
+
+### Missing System Libraries
+
+If you see errors about missing libraries:
+
+```
+Gobject-introspection typelib file for arrow-glib not found
+```
+
+Ensure Apache Arrow GLib is properly installed and `PKG_CONFIG_PATH` includes Arrow's `.pc` files:
+
+```bash
+export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
+```
+
+### Version Mismatch
+
+Red Arrow requires matching versions with Arrow GLib. If you encounter version errors, ensure:
+
+```bash
+# Check installed Arrow GLib version
+pkg-config --modversion arrow-glib
+
+# Should match Red Arrow gem version (major.minor.micro)
+```
+
+### macOS Library Paths
+
+On macOS, you may need to set library paths:
+
+```bash
+export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig"
+export DYLD_LIBRARY_PATH="$(brew --prefix)/lib:$DYLD_LIBRARY_PATH"
+```
+
+## Next Steps
+
+Now that Red Arrow is installed, learn how to use it:
+
+- [Basic Usage](/ruby/basic-usage) - Core concepts and operations
+- [Overview](/ruby/overview) - Library features and architecture

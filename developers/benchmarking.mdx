@@ -1,0 +1,345 @@
+---
+title: Benchmarking Guide
+description: Guide to running, comparing, and writing benchmarks for Apache Arrow to measure and track performance
+---
+
+Apache Arrow includes comprehensive benchmarking infrastructure to measure and track performance across releases. This guide covers how to run benchmarks, compare results, and write effective benchmarks.
+
+## Setup
+
+Before running benchmarks, install the [Archery](archery) utility:
+
+```bash
+pip install -e dev/archery[benchmark]
+```
+
+Archery is Arrow's command-line tool for development tasks including running benchmarks.
+
+## Running Benchmarks
+
+<Tabs>
+  <Tab title="Using Archery">
+    The recommended way to run benchmarks is through Archery's `benchmark run` command.
+
+    ### Basic Usage
+
+    <Steps>
+      <Step title="Run benchmarks in current workspace">
+        ```bash
+        archery benchmark run
+        ```
+      </Step>
+
+      <Step title="Save results to a file">
+        ```bash
+        archery benchmark run --output=run.json
+        ```
+
+        This saves results for later comparison.
+      </Step>
+
+      <Step title="Run with custom CMake flags">
+        ```bash
+        export CC=clang-8 CXX=clang++8
+        archery benchmark run --cmake-extras="-DARROW_SIMD_LEVEL=NONE"
+        ```
+      </Step>
+
+      <Step title="Use existing build directory">
+        ```bash
+        archery benchmark run $HOME/arrow/cpp/release-build
+        ```
+      </Step>
+    </Steps>
+
+    <Warning>
+      For meaningful benchmark results, always build in **Release** mode to enable compiler optimizations. Debug builds will produce misleading performance numbers.
+    </Warning>
+  </Tab>
+
+  <Tab title="C++ Benchmarks Directly">
+    You can also run C++ benchmark executables directly.
+
+    ### Building Benchmarks
+
+    Enable benchmark building with CMake:
+
+    ```bash
+    cmake .. -DARROW_BUILD_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Release
+    make
+    ```
+
+    ### Running Individual Benchmarks
+
+    ```bash
+    ./build/release/arrow-builder-benchmark
+    ```
+
+    Each benchmark executable supports command-line options from Google Benchmark:
+
+    ```bash
+    # Run specific benchmarks matching a regex
+    ./build/release/arrow-compute-benchmark --benchmark_filter=FloatParsing
+
+    # Run with repetitions for statistical significance
+    ./build/release/arrow-compute-benchmark --benchmark_repetitions=10
+
+    # Save results to JSON
+    ./build/release/arrow-compute-benchmark --benchmark_out=results.json
+    ```
+  </Tab>
+</Tabs>
+
+## Comparing Performance
+
+One of the primary goals of benchmarking is detecting performance regressions. Archery provides a `benchmark diff` command for comparing results.
+
+### Basic Comparison
+
+<Steps>
+  <Step title="Compare workspace with main branch">
+    By default, compares your current changes against the local main branch:
+
+    ```bash
+    archery --quiet benchmark diff --benchmark-filter=FloatParsing
+    ```
+
+    Example output:
+    ```
+    -----------------------------------------------------------------------------------
+    Non-regressions: (1)
+    -----------------------------------------------------------------------------------
+                   benchmark            baseline           contender  change % counters
+     FloatParsing<FloatType>  105.983M items/sec  105.983M items/sec       0.0       {}
+
+    ------------------------------------------------------------------------------------
+    Regressions: (1)
+    ------------------------------------------------------------------------------------
+                    benchmark            baseline           contender  change % counters
+     FloatParsing<DoubleType>  209.941M items/sec  109.941M items/sec   -47.632       {}
+    ```
+  </Step>
+
+  <Step title="Compare specific commits or branches">
+    ```bash
+    archery benchmark diff main feature-branch
+    ```
+  </Step>
+
+  <Step title="Compare using saved results">
+    ```bash
+    archery benchmark run --output=baseline.json $HOME/arrow/cpp/release-build
+    git checkout some-feature
+    archery benchmark run --output=contender.json $HOME/arrow/cpp/release-build
+    archery benchmark diff contender.json baseline.json
+    ```
+  </Step>
+</Steps>
+
+For more options, run:
+
+```bash
+archery benchmark diff --help
+```
+
+## Iterating Efficiently
+
+Benchmark development can be tedious due to long build and run times. Use these techniques to reduce overhead:
+
+### 1. Preserve Build Directories
+
+Reuse build directories to avoid rebuilding from scratch:
+
+```bash
+# First invocation: clone and build in temporary directory
+archery benchmark diff --preserve
+
+# Modify C++ sources...
+
+# Re-run benchmark using existing build directories
+archery benchmark diff /tmp/arrow-bench*/{WORKSPACE,master}/build
+```
+
+### 2. Cache Benchmark Results
+
+Save baseline results to avoid re-running benchmarks:
+
+```bash
+# Run benchmarks once and save results
+archery benchmark run --output=run-head-1.json HEAD~1
+
+# Compare against cached results
+archery benchmark diff HEAD run-head-1.json
+```
+
+### 3. Filter Benchmarks
+
+Run only relevant benchmarks using filters:
+
+```bash
+# Filter by suite and benchmark name (supports regex)
+archery benchmark diff \
+  --suite-filter=compute-aggregate \
+  --benchmark-filter=Kernel \
+  /tmp/arrow-bench*/{WORKSPACE,master}/build
+```
+
+<Tip>
+  Combine all three techniques for fastest iteration during benchmark development.
+</Tip>
+
+## Writing Benchmarks
+
+### Regression Benchmarks
+
+Benchmarks intended for automated regression detection should follow these guidelines:
+
+<AccordionGroup>
+  <Accordion title="1. Name benchmarks with 'Regression' prefix">
+    By default, the benchmark command filters for benchmarks matching `^Regression`:
+
+    ```cpp
+    static void RegressionStringParsing(benchmark::State& state) {
+      // benchmark implementation
+    }
+    BENCHMARK(RegressionStringParsing);
+    ```
+  </Accordion>
+
+  <Accordion title="2. Don't override repetitions">
+    The benchmark command runs with `--benchmark_repetitions=K` for statistical significance. Don't override this in your benchmark definition:
+
+    ```cpp
+    // Good
+    BENCHMARK(RegressionStringParsing);
+
+    // Bad - don't override repetitions
+    BENCHMARK(RegressionStringParsing)->Repetitions(10);
+    ```
+  </Accordion>
+
+  <Accordion title="3. Keep benchmarks fast">
+    Benchmarks should run sufficiently fast. If input doesn't fit in L2/L3 cache, the benchmark becomes memory-bound instead of CPU-bound. Consider downsizing inputs.
+  </Accordion>
+
+  <Accordion title="4. Use appropriate time metric">
+    Google Benchmark defaults to CPU time (sum of time on CPU for all threads). For single-threaded benchmarks, this is preferable as it's less affected by context switching.
+
+    For multi-threaded benchmarks, use real time instead:
+
+    ```cpp
+    static void MultiThreadedBenchmark(benchmark::State& state) {
+      // benchmark implementation
+    }
+    BENCHMARK(MultiThreadedBenchmark)->ThreadRange(1, 16)->UseRealTime();
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Benchmark Structure
+
+Here's a template for writing Arrow C++ benchmarks:
+
+```cpp
+#include <benchmark/benchmark.h>
+#include <arrow/api.h>
+
+static void BenchmarkExample(benchmark::State& state) {
+  // Setup (runs once)
+  auto array = arrow::ArrayFromJSON(arrow::int64(), "[1, 2, 3, 4, 5]");
+
+  // Benchmark loop
+  for (auto _ : state) {
+    // Code to benchmark
+    auto result = SomeOperation(array);
+    benchmark::DoNotOptimize(result);
+  }
+
+  // Optional: Set custom counters
+  state.SetItemsProcessed(state.iterations() * array->length());
+}
+
+BENCHMARK(BenchmarkExample);
+
+// Benchmark with parameters
+static void BenchmarkWithArgs(benchmark::State& state) {
+  int64_t size = state.range(0);
+  auto array = MakeArray(size);
+
+  for (auto _ : state) {
+    auto result = SomeOperation(array);
+    benchmark::DoNotOptimize(result);
+  }
+}
+
+BENCHMARK(BenchmarkWithArgs)->Range(1024, 1<<20);
+```
+
+## Scripting and Automation
+
+Archery is available as a Python library for automation:
+
+```python
+from archery import benchmark
+
+# Your custom benchmark automation
+```
+
+### Controlling Output
+
+Use `--quiet` to suppress build output or `--output=<file>` to redirect:
+
+```bash
+archery benchmark diff \
+  --benchmark-filter=Kernel \
+  --output=compare.json \
+  ...
+```
+
+## Continuous Benchmarking
+
+Arrow uses [Conbench](https://conbench.ursa.dev/) for continuous benchmarking across releases. This tracks performance over time and automatically detects regressions.
+
+Benchmark results from CI are automatically uploaded to Conbench, where you can:
+
+- View historical performance trends
+- Compare performance across platforms
+- Identify when regressions were introduced
+- Track improvements from optimizations
+
+## Performance Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Profile Before Optimizing" icon="chart-line">
+    Use profiling tools to identify actual bottlenecks before optimizing. Don't guess.
+  </Card>
+
+  <Card title="Benchmark Realistic Workloads" icon="database">
+    Use data and access patterns representative of real-world usage.
+  </Card>
+
+  <Card title="Consider Memory Hierarchy" icon="memory">
+    Cache effects significantly impact performance. Test with data sizes that reflect actual use cases.
+  </Card>
+
+  <Card title="Test Multiple Platforms" icon="server">
+    Performance characteristics vary across CPU architectures. Test on target platforms.
+  </Card>
+</CardGroup>
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="Google Benchmark Guide" icon="book" href="https://github.com/google/benchmark/blob/main/docs/user_guide.md">
+    Complete guide to Google Benchmark framework
+  </Card>
+  <Card title="Archery Documentation" icon="toolbox" href="archery">
+    Full documentation for Arrow's development utility
+  </Card>
+  <Card title="Conbench" icon="chart-area" href="https://conbench.ursa.dev/">
+    View Arrow's continuous benchmark results
+  </Card>
+  <Card title="Performance Tips" icon="bolt" href="/developers/cpp/conventions">
+    C++ coding conventions and performance considerations
+  </Card>
+</CardGroup>

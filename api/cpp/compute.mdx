@@ -1,0 +1,308 @@
+---
+title: Compute Functions
+description: API reference for Apache Arrow C++ compute functions
+---
+
+# Compute Functions
+
+The compute module provides functions for performing data transformations and computations on Arrow data structures.
+
+## Function Registry
+
+All compute functions are registered in a global function registry.
+
+### GetFunctionRegistry
+
+Returns the global function registry.
+
+```cpp
+FunctionRegistry* GetFunctionRegistry()
+```
+
+### Calling Functions
+
+Functions can be called using the `CallFunction` convenience API:
+
+```cpp
+Result<Datum> CallFunction(
+    const std::string& func_name,
+    const std::vector<Datum>& args,
+    const FunctionOptions* options = nullptr,
+    ExecContext* ctx = nullptr)
+```
+
+<ParamField path="func_name" type="const std::string&" required>
+  Name of the function to call
+</ParamField>
+
+<ParamField path="args" type="const std::vector<Datum>&" required>
+  Input arguments (Arrays, Scalars, or ChunkedArrays)
+</ParamField>
+
+<ParamField path="options" type="const FunctionOptions*">
+  Function-specific options
+</ParamField>
+
+<ParamField path="ctx" type="ExecContext*">
+  Execution context (memory pool, function registry, etc.)
+</ParamField>
+
+**Returns:** Result containing output data
+
+---
+
+## Function Classes
+
+### Function
+
+Base class for all compute functions.
+
+```cpp
+class Function
+```
+
+<ResponseField name="name" type="const std::string&">
+  Returns the function name
+</ResponseField>
+
+<ResponseField name="kind" type="Function::Kind">
+  Returns the function kind (SCALAR, VECTOR, SCALAR_AGGREGATE, HASH_AGGREGATE, or META)
+</ResponseField>
+
+<ResponseField name="arity" type="const Arity&">
+  Returns the function arity (number of required arguments)
+</ResponseField>
+
+<ResponseField name="doc" type="const FunctionDoc&">
+  Returns the function documentation
+</ResponseField>
+
+<ResponseField name="Execute" type="Result<Datum>">
+  <ParamField path="args" type="const std::vector<Datum>&" required>
+    Input arguments
+  </ParamField>
+  <ParamField path="options" type="const FunctionOptions*">
+    Function options
+  </ParamField>
+  <ParamField path="ctx" type="ExecContext*">
+    Execution context
+  </ParamField>
+  
+  Executes the function with kernel dispatch, batch iteration, and memory allocation handled automatically
+</ResponseField>
+
+#### Function Kinds
+
+- **SCALAR**: Operates element-wise on arrays/scalars. Output size matches input size
+- **VECTOR**: Array-to-array operations where behavior depends on entire array values
+- **SCALAR_AGGREGATE**: Computes scalar summary statistics from array input
+- **HASH_AGGREGATE**: Computes grouped summary statistics from array input and group identifiers
+- **META**: Dispatches to other functions, contains no kernels
+
+### Arity
+
+Describes the number of required arguments for a function.
+
+```cpp
+struct Arity {
+  int num_args;
+  bool is_varargs;
+}
+```
+
+<ResponseField name="Nullary" type="static Arity">
+  Function taking no arguments
+</ResponseField>
+
+<ResponseField name="Unary" type="static Arity">
+  Function taking 1 argument
+</ResponseField>
+
+<ResponseField name="Binary" type="static Arity">
+  Function taking 2 arguments
+</ResponseField>
+
+<ResponseField name="Ternary" type="static Arity">
+  Function taking 3 arguments
+</ResponseField>
+
+<ResponseField name="VarArgs" type="static Arity">
+  <ParamField path="min_args" type="int">
+    Minimum number of required arguments (default: 0)
+  </ParamField>
+  
+  Function taking a variable number of arguments
+</ResponseField>
+
+---
+
+## Common Compute Functions
+
+### Arithmetic Functions
+
+Element-wise arithmetic operations.
+
+```cpp
+// Binary operations
+Result<Datum> Add(const Datum& left, const Datum& right, ExecContext* ctx = nullptr);
+Result<Datum> Subtract(const Datum& left, const Datum& right, ExecContext* ctx = nullptr);
+Result<Datum> Multiply(const Datum& left, const Datum& right, ExecContext* ctx = nullptr);
+Result<Datum> Divide(const Datum& left, const Datum& right, ExecContext* ctx = nullptr);
+
+// Unary operations
+Result<Datum> Negate(const Datum& value, ExecContext* ctx = nullptr);
+Result<Datum> Abs(const Datum& value, ExecContext* ctx = nullptr);
+```
+
+### Comparison Functions
+
+Element-wise comparison operations.
+
+```cpp
+Result<Datum> Equal(const Datum& left, const Datum& right, ExecContext* ctx = nullptr);
+Result<Datum> NotEqual(const Datum& left, const Datum& right, ExecContext* ctx = nullptr);
+Result<Datum> Less(const Datum& left, const Datum& right, ExecContext* ctx = nullptr);
+Result<Datum> LessEqual(const Datum& left, const Datum& right, ExecContext* ctx = nullptr);
+Result<Datum> Greater(const Datum& left, const Datum& right, ExecContext* ctx = nullptr);
+Result<Datum> GreaterEqual(const Datum& left, const Datum& right, ExecContext* ctx = nullptr);
+```
+
+### Aggregate Functions
+
+Compute summary statistics.
+
+```cpp
+Result<Datum> Sum(const Datum& array, const ScalarAggregateOptions& options, ExecContext* ctx = nullptr);
+Result<Datum> Mean(const Datum& array, const ScalarAggregateOptions& options, ExecContext* ctx = nullptr);
+Result<Datum> Min(const Datum& array, const ScalarAggregateOptions& options, ExecContext* ctx = nullptr);
+Result<Datum> Max(const Datum& array, const ScalarAggregateOptions& options, ExecContext* ctx = nullptr);
+Result<Datum> Count(const Datum& array, const CountOptions& options, ExecContext* ctx = nullptr);
+```
+
+### Type Casting
+
+Cast data to different types.
+
+```cpp
+Result<Datum> Cast(const Datum& value, const CastOptions& options, ExecContext* ctx = nullptr);
+Result<Datum> Cast(const Datum& value, std::shared_ptr<DataType> to_type, ExecContext* ctx = nullptr);
+```
+
+<ParamField path="value" type="const Datum&" required>
+  Value to cast
+</ParamField>
+
+<ParamField path="options" type="const CastOptions&" required>
+  Cast options including target type
+</ParamField>
+
+<ParamField path="to_type" type="std::shared_ptr<DataType>" required>
+  Target data type
+</ParamField>
+
+#### CastOptions
+
+```cpp
+struct CastOptions {
+  std::shared_ptr<DataType> to_type;
+  bool allow_int_overflow = false;
+  bool allow_time_truncate = false;
+  bool allow_time_overflow = false;
+  bool allow_decimal_truncate = false;
+  bool allow_float_truncate = false;
+  bool allow_invalid_utf8 = false;
+}
+```
+
+---
+
+## Filter and Selection
+
+### Filter
+
+Filter an array by a boolean selection mask.
+
+```cpp
+Result<Datum> Filter(const Datum& values, const Datum& filter, const FilterOptions& options, ExecContext* ctx = nullptr);
+```
+
+<ParamField path="values" type="const Datum&" required>
+  Array or ChunkedArray to filter
+</ParamField>
+
+<ParamField path="filter" type="const Datum&" required>
+  Boolean array indicating which values to keep
+</ParamField>
+
+<ParamField path="options" type="const FilterOptions&" required>
+  Filter options
+</ParamField>
+
+### Take
+
+Select values by indices.
+
+```cpp
+Result<Datum> Take(const Datum& values, const Datum& indices, const TakeOptions& options, ExecContext* ctx = nullptr);
+```
+
+<ParamField path="values" type="const Datum&" required>
+  Array or ChunkedArray to select from
+</ParamField>
+
+<ParamField path="indices" type="const Datum&" required>
+  Integer array of indices to select
+</ParamField>
+
+<ParamField path="options" type="const TakeOptions&" required>
+  Take options (handling of out-of-bounds indices)
+</ParamField>
+
+---
+
+## String Functions
+
+### String Operations
+
+```cpp
+// String predicates
+Result<Datum> IsAscii(const Datum& strings, ExecContext* ctx = nullptr);
+Result<Datum> IsUtf8(const Datum& strings, ExecContext* ctx = nullptr);
+
+// String transformations
+Result<Datum> Utf8Upper(const Datum& strings, ExecContext* ctx = nullptr);
+Result<Datum> Utf8Lower(const Datum& strings, ExecContext* ctx = nullptr);
+Result<Datum> Utf8Reverse(const Datum& strings, ExecContext* ctx = nullptr);
+
+// String trimming
+Result<Datum> Utf8Trim(const Datum& strings, const TrimOptions& options, ExecContext* ctx = nullptr);
+Result<Datum> Utf8LTrim(const Datum& strings, const TrimOptions& options, ExecContext* ctx = nullptr);
+Result<Datum> Utf8RTrim(const Datum& strings, const TrimOptions& options, ExecContext* ctx = nullptr);
+```
+
+---
+
+## Execution Context
+
+### ExecContext
+
+Provides execution context including memory pool and function registry.
+
+```cpp
+class ExecContext {
+ public:
+  explicit ExecContext(MemoryPool* pool = default_memory_pool(),
+                       FunctionRegistry* func_registry = nullptr);
+  
+  MemoryPool* memory_pool() const;
+  FunctionRegistry* func_registry() const;
+}
+```
+
+<ResponseField name="memory_pool" type="MemoryPool*">
+  Returns the memory pool for allocations
+</ResponseField>
+
+<ResponseField name="func_registry" type="FunctionRegistry*">
+  Returns the function registry for looking up functions
+</ResponseField>

@@ -1,0 +1,892 @@
+---
+title: Arrow Data Type System
+description: Comprehensive guide to Apache Arrow's type system including primitive, nested, and extension types
+---
+
+## Overview
+
+Apache Arrow defines a rich, language-agnostic type system that maps to physical memory layouts optimized for analytical operations. The type system is specified in `Schema.fbs` and supports:
+
+- **Primitive types** - Fixed and variable-width data
+- **Nested types** - Lists, structs, unions, maps
+- **Parametric types** - Types with configurable parameters
+- **Extension types** - Custom application-defined types
+- **Encoded types** - Dictionary and run-end encoding
+
+<Note>
+The Arrow type system provides both logical types (application semantics) and physical layouts (memory representation) in a unified model.
+</Note>
+
+## Type Categories
+
+### Primitive Types
+
+Types with no child types, representing simple values:
+
+- Fixed-width values (Int, Float, Boolean, Date, Time, Timestamp)
+- Variable-width values (Binary, Utf8)
+- Null type (all values are null)
+
+### Nested Types
+
+Types whose structure depends on child types:
+
+- List types (List, LargeList, FixedSizeList, ListView)
+- Struct (ordered collection of fields)
+- Map (key-value pairs)
+- Union (choice of types)
+
+### Parametric Types
+
+Types requiring parameters for complete specification:
+
+- Timestamp (unit + optional timezone)
+- Decimal (precision + scale + bit width)
+- Time (unit + bit width)
+- FixedSizeBinary (byte width)
+
+## Primitive Types
+
+### Null Type
+
+```flatbuffers
+table Null {}
+```
+
+Represents a sequence of all null values. No buffers are allocated.
+
+**Use Cases:**
+- Placeholder columns
+- Unknown types during schema evolution
+- Testing null handling
+
+### Boolean Type
+
+```flatbuffers
+table Bool {}
+```
+
+**Physical Layout:** Bit-packed in bytes (8 booleans per byte)
+
+```text
+values = [true, false, true, true, false, false, true, false]
+
+Byte layout (LSB numbering):
+bit:  7  6  5  4  3  2  1  0
+      0  1  0  0  1  1  0  1
+```
+
+**Buffers:**
+- Validity bitmap
+- Data buffer (bit-packed)
+
+### Integer Types
+
+```flatbuffers
+table Int {
+  bitWidth: int;    // 8, 16, 32, or 64
+  is_signed: bool;
+}
+```
+
+**Supported Types:**
+
+| Type | Bit Width | Signed | Range |
+|------|-----------|--------|-------|
+| Int8 | 8 | Yes | -128 to 127 |
+| UInt8 | 8 | No | 0 to 255 |
+| Int16 | 16 | Yes | -32,768 to 32,767 |
+| UInt16 | 16 | No | 0 to 65,535 |
+| Int32 | 32 | Yes | -2³¹ to 2³¹-1 |
+| UInt32 | 32 | No | 0 to 2³²-1 |
+| Int64 | 64 | Yes | -2⁶³ to 2⁶³-1 |
+| UInt64 | 64 | No | 0 to 2⁶⁴-1 |
+
+<Note>
+Signed integers are preferred for cross-language compatibility. Avoid UInt64 unless required by application.
+</Note>
+
+### Floating Point Types
+
+```flatbuffers
+enum Precision { HALF, SINGLE, DOUBLE }
+
+table FloatingPoint {
+  precision: Precision;
+}
+```
+
+| Type | Precision | Bits | Range |
+|------|-----------|------|-------|
+| Float16 | HALF | 16 | IEEE 754 half precision |
+| Float32 | SINGLE | 32 | IEEE 754 single precision |
+| Float64 | DOUBLE | 64 | IEEE 754 double precision |
+
+### Decimal Types
+
+```flatbuffers
+table Decimal {
+  precision: int;      // Total decimal digits
+  scale: int;          // Digits after decimal point
+  bitWidth: int = 128; // 32, 64, 128, or 256
+}
+```
+
+**Bit Width Support:**
+- **32-bit**: Decimal32 (new in 1.5)
+- **64-bit**: Decimal64 (new in 1.5)
+- **128-bit**: Decimal128 (since 1.1)
+- **256-bit**: Decimal256 (since 1.1)
+
+**Representation:** Two's complement integer
+
+**Example:**
+```text
+Decimal128(precision=10, scale=2)
+  Value: 12345.67
+  Stored as: 1234567 (integer)
+  
+Decimal256(precision=38, scale=4)
+  Value: 123456789012345678901234567890.1234
+  Stored as: 1234567890123456789012345678901234 (256-bit integer)
+```
+
+## Temporal Types
+
+### Date Types
+
+```flatbuffers
+enum DateUnit { DAY, MILLISECOND }
+
+table Date {
+  unit: DateUnit = MILLISECOND;
+}
+```
+
+| Type | Unit | Storage | Epoch |
+|------|------|---------|-------|
+| Date32 | DAY | 32-bit int | Days since UNIX epoch |
+| Date64 | MILLISECOND | 64-bit int | Milliseconds since UNIX epoch |
+
+<Note>
+Date64 values must be evenly divisible by 86,400,000 (milliseconds per day).
+</Note>
+
+### Time Types
+
+```flatbuffers
+enum TimeUnit { SECOND, MILLISECOND, MICROSECOND, NANOSECOND }
+
+table Time {
+  unit: TimeUnit = MILLISECOND;
+  bitWidth: int = 32;
+}
+```
+
+| Type | Unit | Bit Width | Range |
+|------|------|-----------|-------|
+| Time32 | SECOND | 32 | 0 to 86,399 |
+| Time32 | MILLISECOND | 32 | 0 to 86,399,999 |
+| Time64 | MICROSECOND | 64 | 0 to 86,399,999,999 |
+| Time64 | NANOSECOND | 64 | 0 to 86,399,999,999,999 |
+
+**Semantics:** Time elapsed since midnight (no leap seconds)
+
+<Warning>
+Leap second values (86,400) must be corrected to 86,399 when ingesting into Arrow.
+</Warning>
+
+### Timestamp Types
+
+```flatbuffers
+table Timestamp {
+  unit: TimeUnit;
+  timezone: string;  // Optional
+}
+```
+
+**Storage:** 64-bit integer
+
+**Timezone Semantics:**
+
+<AccordionGroup>
+  <Accordion title="With Timezone (Physical Time)">
+    **Epoch:** 1970-01-01 00:00:00 UTC
+    
+    ```text
+    Timestamp(unit=MICROSECOND, timezone="Europe/Paris")
+      Value: 0
+      Represents: 1970-01-01 00:00:00 UTC
+      Display: 1970-01-01 01:00:00 Europe/Paris
+    
+    Can be compared and ordered directly across timezones.
+    ```
+  </Accordion>
+  
+  <Accordion title="Without Timezone (Wall Clock Time)">
+    **Epoch:** 1970-01-01 00:00:00 in unknown timezone
+    
+    ```text
+    Timestamp(unit=MICROSECOND, timezone=null)
+      Value: 0
+      Represents: 1970-01-01 00:00:00 in unspecified timezone
+    
+    Cannot be meaningfully compared across sources.
+    Cannot be interpreted as physical point in time.
+    ```
+  </Accordion>
+</AccordionGroup>
+
+**Timezone Specifications:**
+- Olson/IANA timezone database names: `"America/New_York"`
+- Absolute offsets: `"+07:30"`, `"-05:00"`
+- Empty string or null: no timezone
+
+**Guidelines for External Libraries:**
+
+| Library Concept | Arrow Representation |
+|-----------------|---------------------|
+| Instant | Timestamp with `timezone="UTC"` |
+| Zoned DateTime | Timestamp with timezone name |
+| Offset DateTime | Timestamp with offset string |
+| Naive/Local DateTime | Timestamp with no timezone |
+
+<Warning>
+Changing timezone is metadata-only if both old and new are non-empty. Changing from empty to non-empty requires value adjustment.
+</Warning>
+
+### Duration Types
+
+```flatbuffers
+table Duration {
+  unit: TimeUnit = MILLISECOND;
+}
+```
+
+**Storage:** 64-bit signed integer
+
+**Semantics:** Absolute elapsed time independent of calendars
+
+```text
+Duration(unit=SECOND)
+  Value: 86400
+  Represents: 1 day worth of seconds
+  
+  Note: Does not account for leap seconds
+```
+
+### Interval Types
+
+```flatbuffers
+enum IntervalUnit { YEAR_MONTH, DAY_TIME, MONTH_DAY_NANO }
+
+table Interval {
+  unit: IntervalUnit;
+}
+```
+
+**Calendar-based intervals:**
+
+| Unit | Storage | Structure |
+|------|---------|----------|
+| YEAR_MONTH | 32-bit int | Months |
+| DAY_TIME | 64-bit (2×32-bit) | Days, Milliseconds |
+| MONTH_DAY_NANO | 128-bit (32+32+64) | Months, Days, Nanoseconds |
+
+**MONTH_DAY_NANO (new in 1.2):**
+```text
+struct MonthDayNano {
+  months: int32;       // Independent
+  days: int32;         // Independent
+  nanoseconds: int64;  // Independent, no leap seconds
+}
+```
+
+Each field is independent - no constraint that nanoseconds < 1 day.
+
+## Binary and String Types
+
+### Variable-Size Binary
+
+```flatbuffers
+table Binary {}        // 32-bit offsets
+table LargeBinary {}   // 64-bit offsets
+```
+
+**Physical Layout:**
+- Validity bitmap
+- Offsets buffer (32 or 64-bit integers)
+- Data buffer (raw bytes)
+
+```text
+Binary: ['foo', null, 'bar']
+
+Offsets (32-bit): [0, 3, 3, 6]
+Data: 'foobar'
+```
+
+### UTF-8 Strings
+
+```flatbuffers
+table Utf8 {}         // 32-bit offsets
+table LargeUtf8 {}    // 64-bit offsets
+```
+
+**Same layout as Binary but:**
+- Data must be valid UTF-8
+- Enables string operations
+- Semantic distinction for type checking
+
+### Binary View
+
+```flatbuffers
+table BinaryView {}   // New in 1.4
+table Utf8View {}     // New in 1.4
+```
+
+**Optimized for string operations:**
+
+```text
+View structure (16 bytes):
+
+Inline strings (≤ 12 bytes):
+  [length: 4 bytes][data: 12 bytes padded]
+
+Out-of-line strings (> 12 bytes):
+  [length: 4 bytes][prefix: 4 bytes][buffer_index: 4 bytes][offset: 4 bytes]
+```
+
+**Advantages:**
+- Small strings stored inline (no indirection)
+- Prefix enables fast comparisons
+- Multiple data buffers reduce fragmentation
+- Efficient slicing without data movement
+
+**Example:**
+```text
+["hi", "hello", "world", "x", "supercalifragilisticexpialidocious"]
+
+Views buffer:
+  [2, "hi" + padding]
+  [5, "hello" + padding]
+  [5, "world" + padding]
+  [1, "x" + padding]
+  [34, "supe", buf=0, offset=0]
+
+Data buffer 0:
+  "supercalifragilisticexpialidocious"
+```
+
+### Fixed-Size Binary
+
+```flatbuffers
+table FixedSizeBinary {
+  byteWidth: int;
+}
+```
+
+**Use Cases:**
+- UUIDs (16 bytes)
+- Hashes (32 bytes)
+- IPv6 addresses (16 bytes)
+- Fixed-width encodings
+
+```text
+FixedSizeBinary(16): [uuid1, uuid2, null, uuid3]
+
+Validity: [1, 1, 0, 1]
+Data: [16 bytes][16 bytes][16 bytes unspecified][16 bytes]
+```
+
+## Nested Types
+
+### List Types
+
+**Variable-size lists:**
+
+```flatbuffers
+table List {}           // 32-bit offsets
+table LargeList {}      // 64-bit offsets
+```
+
+**Type notation:** `List<T>` where T is the element type
+
+**Example:** `List<Int32>`
+```text
+Values: [[1, 2], null, [3, 4, 5], []]
+
+List array:
+  Validity: [1, 0, 1, 1]
+  Offsets: [0, 2, 2, 5, 5]
+  
+Child array (Int32):
+  Length: 5
+  Values: [1, 2, 3, 4, 5]
+```
+
+### List View
+
+```flatbuffers
+table ListView {}          // 32-bit (new in 1.4)
+table LargeListView {}     // 64-bit (new in 1.4)
+```
+
+**Enables out-of-order offsets:**
+
+```text
+ListView<Int32>: [[1, 2], [3], [], [2, 1]]
+
+Offsets: [3, 0, 0, 1]
+Sizes:   [2, 1, 0, 2]
+
+Child values: [3, 2, 1, 1, 2]
+              ^    ^  ^  ^
+              |    |  |  +-- list 0 element 0
+              |    |  +----- list 0 element 1
+              |    +-------- list 3 element 0
+              +------------- list 1
+```
+
+**Advantages:**
+- Allows sharing of child values
+- Enables zero-copy slicing
+- More flexible than standard List
+
+### Fixed-Size List
+
+```flatbuffers
+table FixedSizeList {
+  listSize: int;
+}
+```
+
+**Type notation:** `FixedSizeList<T>[N]`
+
+**Example:** `FixedSizeList<Float32>[3]`
+```text
+Values: [[1.0, 2.0, 3.0], null, [4.0, 5.0, 6.0]]
+
+List array:
+  Validity: [1, 0, 1]
+  
+Child array (Float32):
+  Length: 9
+  Values: [1.0, 2.0, 3.0, <unspecified>, <unspecified>, <unspecified>, 4.0, 5.0, 6.0]
+```
+
+### Struct Type
+
+```flatbuffers
+table Struct_ {}  // Underscore avoids Flatbuffers keyword
+```
+
+**Type notation:** `Struct<field1: Type1, field2: Type2, ...>`
+
+**Example:** `Struct<name: Utf8, age: Int32, score: Float64>`
+```text
+Values: [
+  {name: "Alice", age: 30, score: 95.5},
+  {name: "Bob", age: null, score: 87.0},
+  null,
+  {name: "Charlie", age: 25, score: null}
+]
+
+Struct array:
+  Length: 4
+  Validity: [1, 1, 0, 1]
+
+Child arrays:
+  name (Utf8):
+    Length: 4
+    Validity: [1, 1, 1, 1]
+    Values: ["Alice", "Bob", <ignored>, "Charlie"]
+  
+  age (Int32):
+    Length: 4
+    Validity: [1, 0, 1, 1]
+    Values: [30, <unspecified>, <ignored>, 25]
+  
+  score (Float64):
+    Length: 4
+    Validity: [1, 1, 1, 0]
+    Values: [95.5, 87.0, <ignored>, <unspecified>]
+```
+
+<Warning>
+**Struct validity semantics:** A field value is valid only if BOTH the struct validity AND the child array validity indicate valid for that slot.
+</Warning>
+
+### Map Type
+
+```flatbuffers
+table Map {
+  keysSorted: bool;
+}
+```
+
+**Physical layout:** `List<Struct<key: K, value: V>>`
+
+**Type notation:** `Map<K, V>`
+
+**Constraints:**
+- Keys field must not be nullable
+- Entries struct must not be nullable
+- Applications responsible for key uniqueness/hashability
+
+**Example:** `Map<Utf8, Int32>`
+```text
+Values: [
+  {"a": 1, "b": 2},
+  {},
+  {"c": 3}
+]
+
+Map → List<Struct<key: Utf8, value: Int32>>:
+  Offsets: [0, 2, 2, 3]
+  
+  Entries (Struct):
+    key: ["a", "b", "c"]
+    value: [1, 2, 3]
+```
+
+### Union Types
+
+```flatbuffers
+enum UnionMode { Sparse, Dense }
+
+table Union {
+  mode: UnionMode;
+  typeIds: [int];  // Optional mapping
+}
+```
+
+**Type notation:** `Union<field1: Type1, field2: Type2, ...>`
+
+<Note>
+**Critical:** Union types do NOT have a validity bitmap. Nullness is determined by child arrays only.
+</Note>
+
+#### Dense Union
+
+**Buffers:**
+- Type IDs (8-bit integers)
+- Offsets (32-bit integers)
+- Child arrays (different lengths)
+
+**Example:** `DenseUnion<f: Float32, i: Int32>`
+```text
+Values: [{f: 1.2}, null, {f: 3.4}, {i: 5}]
+
+Type IDs: [0, 0, 0, 1]  (0=Float32, 1=Int32)
+Offsets:  [0, 1, 2, 0]
+
+Child arrays:
+  f (Float32):
+    Length: 3
+    Validity: [1, 0, 1]
+    Values: [1.2, <unspecified>, 3.4]
+  
+  i (Int32):
+    Length: 1
+    Validity: [1]
+    Values: [5]
+```
+
+**Overhead:** 5 bytes per value (1 byte type ID + 4 bytes offset)
+
+#### Sparse Union
+
+**Buffers:**
+- Type IDs (8-bit integers)
+- Child arrays (all same length)
+
+**Example:** `SparseUnion<i: Int32, f: Float32>`
+```text
+Values: [{i: 5}, {f: 1.2}, {i: 4}]
+
+Type IDs: [0, 1, 0]  (0=Int32, 1=Float32)
+
+Child arrays:
+  i (Int32):
+    Length: 3
+    Validity: [1, 0, 1]
+    Values: [5, <unspecified>, 4]
+  
+  f (Float32):
+    Length: 3
+    Validity: [0, 1, 0]
+    Values: [<unspecified>, 1.2, <unspecified>]
+```
+
+**Overhead:** 1 byte per value
+
+**Advantages:**
+- Vectorization-friendly
+- Simple slicing
+- Can interpret equal-length arrays as union
+
+## Encoded Types
+
+### Dictionary Encoding
+
+```flatbuffers
+enum DictionaryKind { DenseArray }
+
+table DictionaryEncoding {
+  id: long;
+  indexType: Int;
+  isOrdered: bool;
+  dictionaryKind: DictionaryKind;
+}
+```
+
+**Use Cases:**
+- Low-cardinality string columns
+- Repeated values
+- Category/enum types
+
+**Example:**
+```text
+Original: ["red", "blue", "red", "green", "blue", "red"]
+
+Encoded:
+  Dictionary (id=0, type=Utf8):
+    ["red", "blue", "green"]
+  
+  Indices (type=Int32):
+    [0, 1, 0, 2, 1, 0]
+```
+
+**Null Handling:**
+```text
+Indices: [0, 1, null, 2]
+Dictionary: ["a", "b", "c"]
+
+Decoded: ["a", "b", null, "c"]
+
+Note: Dictionary itself may contain nulls:
+  Indices: [0, 1, 2]
+  Dictionary: ["a", null, "c"]
+  Decoded: ["a", null, "c"]
+```
+
+<Note>
+**Index types:** Preferably signed integers, 8 to 64 bits. Avoid UInt64 unless necessary.
+</Note>
+
+### Run-End Encoded
+
+```flatbuffers
+table RunEndEncoded {}  // New in 1.3
+```
+
+**Child arrays:**
+1. `run_ends` - 16, 32, or 64-bit signed integers
+2. `values` - any type
+
+**Type notation:** `RunEndEncoded<run_ends: Int32, values: T>`
+
+**Semantics:** Run ends are cumulative (logical index where run ends)
+
+**Example:**
+```text
+Original: ["a", "a", "a", "b", "b", "c", "c", "c", "c"]
+
+Run-End Encoded:
+  run_ends (Int32): [3, 5, 9]
+  values (Utf8): ["a", "b", "c"]
+
+Run 0: positions 0-2 have value "a" (ends at position 3)
+Run 1: positions 3-4 have value "b" (ends at position 5)
+Run 2: positions 5-8 have value "c" (ends at position 9)
+```
+
+**Null Encoding:**
+```text
+Original: [1, 1, null, null, 2, 2, 2]
+
+Run-End Encoded:
+  Length: 7, Null count: 0
+  run_ends (Int32): [2, 4, 7]
+  values (Int32):
+    Validity: [1, 0, 1]
+    Values: [1, <unspecified>, 2]
+```
+
+**Performance:**
+- **Random access:** O(log n) via binary search
+- **Sequential access:** O(1) with state
+- **Best for:** Long runs of repeated values
+
+<Warning>
+Run-End Encoded is the ONLY Arrow layout without O(1) random access.
+</Warning>
+
+## Extension Types
+
+Extension types add custom semantics to standard Arrow types.
+
+### Defining Extension Types
+
+Use field metadata:
+- `ARROW:extension:name` - Unique identifier
+- `ARROW:extension:metadata` - Serialized metadata
+
+### Canonical Extensions
+
+Reserved `arrow.*` namespace:
+
+| Name | Base Type | Description |
+|------|-----------|-------------|
+| `arrow.uuid` | `FixedSizeBinary(16)` | UUID |
+| `arrow.json` | `Utf8` or `Binary` | JSON data |
+| `arrow.opaque` | `Binary` | Opaque binary data |
+
+### Custom Extension Examples
+
+<CardGroup cols={2}>
+  <Card title="IPv4 Address" icon="network-wired">
+    ```text
+    Base: FixedSizeBinary(4)
+    Name: myorg.ipv4
+    Metadata: {}
+    ```
+  </Card>
+  
+  <Card title="Embedding Vector" icon="vector-square">
+    ```text
+    Base: FixedSizeList<Float32>[128]
+    Name: myorg.embedding
+    Metadata: {"model": "bert-base"}
+    ```
+  </Card>
+  
+  <Card title="Complex Number" icon="square-root-variable">
+    ```text
+    Base: Struct<real: Float64, imag: Float64>
+    Name: myorg.complex128
+    Metadata: {}
+    ```
+  </Card>
+  
+  <Card title="Geospatial Point" icon="location-dot">
+    ```text
+    Base: Struct<x: Float64, y: Float64>
+    Name: myorg.point2d
+    Metadata: {"crs": "EPSG:4326"}
+    ```
+  </Card>
+</CardGroup>
+
+## Type Compatibility
+
+### Widening Conversions
+
+Safe conversions that don't lose information:
+
+```text
+Int32 → Int64
+Float32 → Float64
+Date32 → Date64
+Time32[s] → Time64[us]
+Timestamp[ms] → Timestamp[us]
+Utf8 → LargeUtf8
+List<T> → LargeList<T>
+```
+
+### Narrowing Conversions
+
+May lose information, require validation:
+
+```text
+Int64 → Int32 (check range)
+Float64 → Float32 (loss of precision)
+Date64 → Date32
+Timestamp[ns] → Timestamp[ms] (truncation)
+LargeUtf8 → Utf8 (if offsets fit in 32-bit)
+```
+
+### Equivalent Types
+
+Same physical layout, different semantics:
+
+```text
+Binary ↔ Utf8 (if UTF-8 valid)
+Int32 ↔ Date32[day]
+Int64 ↔ Timestamp[ns, null]
+Int32 ↔ Time32[ms]
+```
+
+## Schema Evolution
+
+### Adding Fields
+
+```text
+Old schema: Struct<a: Int32>
+New schema: Struct<a: Int32, b: Int64>
+
+Old data: Fill new field with nulls
+```
+
+### Removing Fields
+
+```text
+Old schema: Struct<a: Int32, b: Int64>
+New schema: Struct<a: Int32>
+
+New data: Ignore missing field 'b'
+```
+
+### Type Changes
+
+Use extension types for compatibility:
+
+```text
+V1: age: Int32
+V2: age: Int32 with ARROW:extension:name = "myapp.age_years"
+
+Old readers: Interpret as Int32
+New readers: Apply age semantics
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Type Selection">
+    - Use smallest type that fits your data
+    - Prefer signed integers over unsigned
+    - Use Timestamp with timezone for physical time
+    - Use Decimal for financial data
+    - Consider dictionary encoding for low cardinality
+  </Accordion>
+  
+  <Accordion title="Nested Types">
+    - Prefer Struct over parallel arrays
+    - Use List for variable-length sequences
+    - Use FixedSizeList for vectors/arrays
+    - Consider ListView for advanced use cases
+    - Use Map for key-value associations
+  </Accordion>
+  
+  <Accordion title="String Types">
+    - Use Utf8 for text data
+    - Use Binary for opaque bytes
+    - Consider Utf8View for string-heavy workloads
+    - Use dictionary encoding for repeated strings
+    - Use LargeUtf8 only when needed (>2GB)
+  </Accordion>
+  
+  <Accordion title="Extension Types">
+    - Use namespaced names (myorg.typename)
+    - Document metadata format
+    - Provide fallback interpretation
+    - Version your extension types
+    - Register canonical extensions when appropriate
+  </Accordion>
+</AccordionGroup>
+
+## References
+
+- [Schema.fbs](https://github.com/apache/arrow/blob/main/format/Schema.fbs) - Complete type definitions
+- [Columnar Format](./columnar-format) - Physical memory layouts
+- [IPC Format](./ipc-format) - Type serialization

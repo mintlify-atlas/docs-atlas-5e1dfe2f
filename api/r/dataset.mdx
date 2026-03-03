@@ -1,0 +1,531 @@
+---
+title: Dataset API
+description: Apache Arrow R API reference for Dataset classes and multi-file operations
+---
+
+## Overview
+
+Arrow Datasets allow you to query against data that has been split across multiple files. This sharding of data may indicate partitioning, which can accelerate queries that only touch some partitions (files). A `Dataset` contains one or more `Fragments`, such as files, of potentially differing type and partitioning.
+
+## Dataset Classes
+
+### Dataset
+
+The base Dataset class.
+
+#### Factory Method
+
+##### Dataset$create()
+
+Alias for `open_dataset()`. See the `open_dataset()` function below.
+
+#### Methods
+
+##### $NewScan()
+
+Returns a ScannerBuilder for building a query.
+
+```r
+ds <- open_dataset("path/to/data")
+scanner <- ds$NewScan()
+```
+
+##### $WithSchema()
+
+Returns a new Dataset with the specified schema. This method currently supports only adding, removing, or reordering fields in the schema: you cannot alter or cast the field types.
+
+<ParamField path="schema" type="Schema">
+  The new schema to use
+</ParamField>
+
+```r
+ds <- open_dataset("path/to/data")
+new_ds <- ds$WithSchema(new_schema)
+```
+
+#### Active Bindings
+
+##### $schema
+
+Returns the Schema of the Dataset. You may also replace the dataset's schema.
+
+```r
+ds <- open_dataset("path/to/data")
+ds$schema
+
+# Replace schema
+ds$schema <- new_schema
+```
+
+##### $metadata
+
+Returns the schema metadata.
+
+##### $num_rows
+
+Number of rows in the dataset.
+
+```r
+ds <- open_dataset("path/to/data")
+ds$num_rows
+```
+
+##### $num_cols
+
+Number of columns in the dataset.
+
+##### $type
+
+Return the Dataset's type.
+
+### FileSystemDataset
+
+A Dataset backed by files in a file system.
+
+#### Active Bindings
+
+##### $files
+
+Return the files contained in this FileSystemDataset.
+
+```r
+ds <- open_dataset("path/to/data")
+ds$files
+```
+
+##### $format
+
+Return the FileFormat of files in this Dataset.
+
+```r
+ds <- open_dataset("path/to/data")
+ds$format
+```
+
+##### $filesystem
+
+Return the filesystem of files in this Dataset.
+
+### UnionDataset
+
+A Dataset composed of multiple child Datasets.
+
+#### Active Bindings
+
+##### $children
+
+Return the UnionDataset's child Datasets.
+
+```r
+ds1 <- open_dataset("path/to/data1")
+ds2 <- open_dataset("path/to/data2")
+union_ds <- c(ds1, ds2)
+union_ds$children
+```
+
+### InMemoryDataset
+
+A Dataset backed by an in-memory Table.
+
+#### Factory Method
+
+##### InMemoryDataset$create()
+
+Create an InMemoryDataset from a Table.
+
+<ParamField path="x" type="Table | data.frame">
+  A Table or object that can be converted to a Table
+</ParamField>
+
+```r
+ds <- InMemoryDataset$create(mtcars)
+```
+
+## Opening Datasets
+
+### open_dataset()
+
+Open a multi-file dataset and return a Dataset object.
+
+<ParamField path="sources" type="character | FileSystem | list">
+  One of:
+  - A string path or URI to a directory containing data files
+  - A FileSystem that references a directory (such as from `s3_bucket()`)
+  - A string path or URI to a single file
+  - A character vector of paths or URIs to individual data files
+  - A list of Dataset objects
+  - A list of DatasetFactory objects
+</ParamField>
+
+<ParamField path="schema" type="Schema" default="NULL">
+  Schema for the Dataset. If NULL (the default), the schema will be inferred from the data sources
+</ParamField>
+
+<ParamField path="partitioning" type="Schema | character | Partitioning" default="hive_partition()">
+  When `sources` is a directory path/URI, one of:
+  - A Schema, in which case the file paths will be parsed and path segments matched with schema fields
+  - A character vector defining field names for path segments (types will be autodetected)
+  - A Partitioning or PartitioningFactory from `hive_partition()`
+  - NULL for no partitioning
+  
+  The default is to autodetect Hive-style partitions
+</ParamField>
+
+<ParamField path="hive_style" type="logical" default="NA">
+  Should partitioning be interpreted as Hive-style? Default is NA, which means to inspect file paths for Hive-style partitioning and behave accordingly
+</ParamField>
+
+<ParamField path="unify_schemas" type="logical" default="varies">
+  Should all data fragments be scanned to create a unified schema? If FALSE, only the first fragment is inspected. Default is FALSE for directory paths (may be slow) but TRUE when sources is a list of Datasets
+</ParamField>
+
+<ParamField path="format" type="character | FileFormat" default="parquet">
+  File format identifier. Currently supported:
+  - "parquet"
+  - "ipc"/"arrow"/"feather" (Feather v2 only)
+  - "csv"/"text"
+  - "tsv"
+  - "json" (newline-delimited JSON only)
+</ParamField>
+
+<ParamField path="..." type="various">
+  Additional format-specific arguments (see `read_csv_arrow()`, `read_parquet()`, etc.)
+</ParamField>
+
+```r
+# Directory of Parquet files
+ds <- open_dataset("path/to/data")
+
+# With partitioning
+ds <- open_dataset("path/to/data", partitioning = c("year", "month"))
+
+# Specific files
+ds <- open_dataset(c("file1.parquet", "file2.parquet"))
+
+# CSV format
+ds <- open_dataset("path/to/csv", format = "csv")
+
+# Multiple datasets
+ds1 <- open_dataset("path/to/data1")
+ds2 <- open_dataset("path/to/data2")
+ds <- open_dataset(list(ds1, ds2))
+```
+
+### open_csv_dataset()
+
+Open a multi-file CSV dataset. A wrapper around `open_dataset()` with CSV-specific parameters.
+
+<ParamField path="sources" type="character | FileSystem | list">
+  Same as `open_dataset()`
+</ParamField>
+
+<ParamField path="schema" type="Schema" default="NULL">
+  Schema for the Dataset
+</ParamField>
+
+<ParamField path="partitioning" type="various" default="hive_partition()">
+  Partitioning specification
+</ParamField>
+
+<ParamField path="col_names" type="logical | character" default="TRUE">
+  Whether the first row contains column names, or a character vector of column names
+</ParamField>
+
+<ParamField path="col_types" type="Schema | character" default="NULL">
+  Schema, partial schema, or compact representation of column types
+</ParamField>
+
+<ParamField path="na" type="character" default='c("", "NA")'>
+  Character vector of strings to interpret as missing values
+</ParamField>
+
+<ParamField path="skip" type="integer" default="0">
+  Number of lines to skip before reading data
+</ParamField>
+
+<ParamField path="skip_empty_rows" type="logical" default="TRUE">
+  Whether to skip empty rows
+</ParamField>
+
+<ParamField path="delim" type="character" default=",">
+  Single character delimiter (CSV: ",", TSV: "\t")
+</ParamField>
+
+<ParamField path="quote" type="character" default='"'>
+  Single character used to quote strings
+</ParamField>
+
+```r
+ds <- open_csv_dataset(
+  "path/to/csv",
+  col_names = c("speed", "dist"),
+  col_types = schema(speed = int32(), dist = int32()),
+  skip = 1
+)
+```
+
+### open_delim_dataset()
+
+Open a multi-file delimiter-separated dataset.
+
+<ParamField path="delim" type="character" default=",">
+  Single character delimiter
+</ParamField>
+
+Other parameters same as `open_csv_dataset()`.
+
+### open_tsv_dataset()
+
+Open a multi-file TSV (tab-separated values) dataset. Automatically sets `delim = "\t"`.
+
+Parameters same as `open_csv_dataset()` except delimiter is fixed.
+
+## Writing Datasets
+
+### write_dataset()
+
+Write a dataset to disk in partitioned files.
+
+<ParamField path="dataset" type="Dataset | Table | RecordBatch | data.frame">
+  Dataset, Table, RecordBatch, arrow_dplyr_query, or data.frame to write. If an arrow_dplyr_query, the query will be evaluated first
+</ParamField>
+
+<ParamField path="path" type="character">
+  String path, URI, or SubTreeFileSystem referencing a directory to write to (will be created if it doesn't exist)
+</ParamField>
+
+<ParamField path="format" type="character" default="parquet">
+  File format identifier: "parquet", "feather", "arrow", "ipc", "csv", "tsv", "text", or "json"
+</ParamField>
+
+<ParamField path="partitioning" type="character | Partitioning" default="dplyr::group_vars(dataset)">
+  Character vector of columns to use as partition keys, or a Partitioning object. Default uses current `group_by()` columns
+</ParamField>
+
+<ParamField path="basename_template" type="character" default='"part-{i}.<ext>"'>
+  String template for file names. Must contain `"{i}"` which will be replaced with an autoincremented integer
+</ParamField>
+
+<ParamField path="hive_style" type="logical" default="TRUE">
+  Write partition segments as Hive-style (`key1=value1/key2=value2/file.ext`) or as bare values
+</ParamField>
+
+<ParamField path="existing_data_behavior" type="character" default="overwrite">
+  One of:
+  - "overwrite" - new files overwrite existing files
+  - "error" - fail if destination is not empty
+  - "delete_matching" - delete existing partitions that will be written to
+</ParamField>
+
+<ParamField path="max_partitions" type="integer" default="1024">
+  Maximum number of partitions any batch may be written into
+</ParamField>
+
+<ParamField path="max_open_files" type="integer" default="900">
+  Maximum number of files that can be left open during write. If too low, may fragment data into many small files
+</ParamField>
+
+<ParamField path="max_rows_per_file" type="integer" default="0">
+  Maximum number of rows per file. If 0, unlimited
+</ParamField>
+
+<ParamField path="min_rows_per_group" type="integer" default="0">
+  Write row groups to disk when this number of rows have accumulated
+</ParamField>
+
+<ParamField path="max_rows_per_group" type="integer" default="1048576">
+  Maximum rows allowed in a single group. Must be greater than `min_rows_per_group`
+</ParamField>
+
+<ParamField path="create_directory" type="logical" default="TRUE">
+  Whether to create directories. Requires appropriate permissions
+</ParamField>
+
+<ParamField path="preserve_order" type="logical" default="FALSE">
+  Preserve the order of rows
+</ParamField>
+
+<ParamField path="..." type="various">
+  Additional format-specific arguments (see `write_parquet()` for Parquet options)
+</ParamField>
+
+```r
+# Write dataset partitioned by cylinder count
+write_dataset(mtcars, "path/to/output", partitioning = "cyl")
+
+# Multiple partitioning columns
+write_dataset(mtcars, "path/to/output", partitioning = c("cyl", "gear"))
+
+# Without Hive-style naming
+write_dataset(mtcars, "path/to/output", 
+              partitioning = c("cyl", "gear"),
+              hive_style = FALSE)
+
+# Using dplyr grouping
+library(dplyr)
+mtcars |>
+  group_by(cyl, gear) |>
+  write_dataset("path/to/output")
+```
+
+### write_csv_dataset()
+
+Write a dataset as CSV files.
+
+<ParamField path="col_names" type="logical" default="TRUE">
+  Whether to write column names as the first row
+</ParamField>
+
+<ParamField path="batch_size" type="integer" default="1024">
+  Maximum number of rows processed at a time
+</ParamField>
+
+<ParamField path="delim" type="character" default=",">
+  Delimiter character (cannot be changed for `write_csv_dataset()`)
+</ParamField>
+
+<ParamField path="na" type="character" default='""'>
+  String to use for missing values
+</ParamField>
+
+<ParamField path="eol" type="character" default='"\\n"'>
+  End of line character
+</ParamField>
+
+<ParamField path="quote" type="character" default="needed">
+  Quoting style:
+  - "needed" - Quote strings/binary values that need quotes
+  - "all" - Quote all valid values
+  - "none" - Do not quote any values
+</ParamField>
+
+Other parameters same as `write_dataset()`.
+
+```r
+write_csv_dataset(mtcars, "path/to/csv", partitioning = "cyl")
+```
+
+### write_tsv_dataset()
+
+Write a dataset as TSV (tab-separated) files. Automatically sets `delim = "\t"`.
+
+Parameters same as `write_csv_dataset()` except delimiter is fixed.
+
+### write_delim_dataset()
+
+Write a dataset as delimited files with a custom delimiter.
+
+<ParamField path="delim" type="character" default=",">
+  Single character delimiter
+</ParamField>
+
+Other parameters same as `write_csv_dataset()`.
+
+## S3 Methods for Datasets
+
+### Subsetting
+
+Datasets support data.frame-like subsetting:
+
+```r
+ds <- open_dataset("path/to/data")
+
+# Column extraction
+ds[, c("col1", "col2")]
+
+# Row slicing (positive indices only)
+ds[1:100, ]
+```
+
+### names(), dim(), nrow(), ncol()
+
+```r
+ds <- open_dataset("path/to/data")
+names(ds)
+dim(ds)
+nrow(ds)
+ncol(ds)
+```
+
+### head() and tail()
+
+```r
+ds <- open_dataset("path/to/data")
+head(ds)
+tail(ds, n = 20)
+```
+
+### as.data.frame()
+
+Collect the entire dataset into a data.frame:
+
+```r
+ds <- open_dataset("path/to/data")
+df <- as.data.frame(ds)
+```
+
+## Partitioning
+
+Datasets support two forms of partitioning:
+
+### Hive-style Partitioning
+
+Partitions encoded as "key=value" in path segments:
+
+```r
+# File structure: year=2019/month=1/file.parquet
+ds <- open_dataset("path/to/data")  # Auto-detects Hive partitioning
+
+# Or explicitly:
+ds <- open_dataset("path/to/data", partitioning = "hive")
+
+# With specific types:
+ds <- open_dataset("path/to/data", 
+                   partitioning = schema(year = int16(), month = int8()))
+```
+
+### Directory Partitioning
+
+Hive without the key names:
+
+```r
+# File structure: 2019/01/file.parquet
+ds <- open_dataset("path/to/data", 
+                   partitioning = c("year", "month"),
+                   hive_style = FALSE)
+
+# With specific types:
+ds <- open_dataset("path/to/data",
+                   partitioning = schema(year = int16(), month = int8()),
+                   hive_style = FALSE)
+```
+
+## Working with Datasets
+
+### Using dplyr
+
+Datasets work seamlessly with dplyr verbs:
+
+```r
+library(dplyr)
+
+ds <- open_dataset("path/to/data")
+
+result <- ds |>
+  filter(year == 2020) |>
+  select(name, value) |>
+  group_by(name) |>
+  summarize(total = sum(value)) |>
+  arrange(desc(total)) |>
+  collect()
+```
+
+### Scanning
+
+For more control, use Scanner:
+
+```r
+ds <- open_dataset("path/to/data")
+scanner <- ds$NewScan()
+table <- scanner$Finish()$ToTable()
+```

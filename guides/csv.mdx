@@ -1,0 +1,592 @@
+---
+title: Working with CSV Files
+description: Learn how to read and write CSV files using Apache Arrow in C++ and Python, including parsing options and type inference.
+---
+
+CSV (Comma-Separated Values) is a widely-used text format for tabular data. Apache Arrow provides efficient CSV readers with automatic type inference and customizable parsing options.
+
+## Reading CSV Files
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/csv/api.h>
+    #include <arrow/io/api.h>
+
+    // Read entire CSV file as a Table
+    arrow::Result<std::shared_ptr<arrow::Table>> ReadCSVFile(
+        const std::string& filename) {
+      // Open the file
+      ARROW_ASSIGN_OR_RAISE(
+          auto input,
+          arrow::io::ReadableFile::Open(filename));
+
+      // Configure CSV reader
+      auto read_options = arrow::csv::ReadOptions::Defaults();
+      auto parse_options = arrow::csv::ParseOptions::Defaults();
+      auto convert_options = arrow::csv::ConvertOptions::Defaults();
+
+      // Create a CSV TableReader
+      ARROW_ASSIGN_OR_RAISE(
+          auto reader,
+          arrow::csv::TableReader::Make(
+              arrow::io::default_io_context(),
+              input,
+              read_options,
+              parse_options,
+              convert_options));
+
+      // Read the entire CSV as a table
+      return reader->Read();
+    }
+
+    // Read CSV with custom delimiter
+    arrow::Result<std::shared_ptr<arrow::Table>> ReadTSVFile(
+        const std::string& filename) {
+      ARROW_ASSIGN_OR_RAISE(
+          auto input,
+          arrow::io::ReadableFile::Open(filename));
+
+      auto read_options = arrow::csv::ReadOptions::Defaults();
+      auto parse_options = arrow::csv::ParseOptions::Defaults();
+      parse_options.delimiter = '\t';  // Tab delimiter
+
+      auto convert_options = arrow::csv::ConvertOptions::Defaults();
+
+      ARROW_ASSIGN_OR_RAISE(
+          auto reader,
+          arrow::csv::TableReader::Make(
+              arrow::io::default_io_context(),
+              input,
+              read_options,
+              parse_options,
+              convert_options));
+
+      return reader->Read();
+    }
+
+    // Streaming CSV read
+    arrow::Status StreamCSVFile(const std::string& filename) {
+      ARROW_ASSIGN_OR_RAISE(
+          auto input,
+          arrow::io::ReadableFile::Open(filename));
+
+      auto read_options = arrow::csv::ReadOptions::Defaults();
+      auto parse_options = arrow::csv::ParseOptions::Defaults();
+      auto convert_options = arrow::csv::ConvertOptions::Defaults();
+
+      // Create a streaming reader
+      ARROW_ASSIGN_OR_RAISE(
+          auto reader,
+          arrow::csv::StreamingReader::Make(
+              arrow::io::default_io_context(),
+              input,
+              read_options,
+              parse_options,
+              convert_options));
+
+      // Read batches
+      std::shared_ptr<arrow::RecordBatch> batch;
+      while (reader->ReadNext(&batch).ok() && batch != nullptr) {
+        std::cout << "Read batch with " << batch->num_rows() << " rows" << std::endl;
+      }
+
+      return arrow::Status::OK();
+    }
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import pyarrow.csv as csv
+
+    # Read entire CSV file as a Table
+    table = csv.read_csv('data.csv')
+    print(f"Loaded table with {table.num_rows} rows")
+
+    # Read with custom delimiter (TSV)
+    parse_options = csv.ParseOptions(delimiter='\t')
+    table = csv.read_csv('data.tsv', parse_options=parse_options)
+
+    # Read with explicit column types
+    convert_options = csv.ConvertOptions(
+        column_types={
+            'id': pa.int64(),
+            'name': pa.string(),
+            'date': pa.timestamp('s')
+        }
+    )
+    table = csv.read_csv('data.csv', convert_options=convert_options)
+
+    # Read specific columns only
+    convert_options = csv.ConvertOptions(
+        include_columns=['id', 'name', 'value']
+    )
+    table = csv.read_csv('data.csv', convert_options=convert_options)
+
+    # Read CSV with no header
+    read_options = csv.ReadOptions(
+        column_names=['col1', 'col2', 'col3']
+    )
+    table = csv.read_csv('data.csv', read_options=read_options)
+
+    # Streaming read for large files
+    reader = csv.open_csv('large_data.csv')
+    for batch in reader:
+        print(f"Processing batch with {batch.num_rows} rows")
+
+    # Read with skip rows
+    read_options = csv.ReadOptions(
+        skip_rows=5,  # Skip first 5 rows
+        skip_rows_after_names=2  # Skip 2 rows after header
+    )
+    table = csv.read_csv('data.csv', read_options=read_options)
+    ```
+  </Tab>
+</Tabs>
+
+## Writing CSV Files
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/csv/api.h>
+    #include <arrow/io/api.h>
+
+    // Write Table to CSV file
+    arrow::Status WriteCSVFile(
+        const std::string& filename,
+        const std::shared_ptr<arrow::Table>& table) {
+      // Open output stream
+      ARROW_ASSIGN_OR_RAISE(
+          auto output,
+          arrow::io::FileOutputStream::Open(filename));
+
+      // Configure write options
+      auto write_options = arrow::csv::WriteOptions::Defaults();
+
+      // Write the table to CSV
+      ARROW_RETURN_NOT_OK(
+          arrow::csv::WriteCSV(*table, write_options, output.get()));
+
+      // Close the output
+      ARROW_RETURN_NOT_OK(output->Close());
+      return arrow::Status::OK();
+    }
+
+    // Write CSV with custom options
+    arrow::Status WriteCSVWithOptions(
+        const std::string& filename,
+        const std::shared_ptr<arrow::Table>& table) {
+      ARROW_ASSIGN_OR_RAISE(
+          auto output,
+          arrow::io::FileOutputStream::Open(filename));
+
+      auto write_options = arrow::csv::WriteOptions::Defaults();
+      write_options.include_header = true;
+      write_options.delimiter = ',';
+
+      ARROW_RETURN_NOT_OK(
+          arrow::csv::WriteCSV(*table, write_options, output.get()));
+
+      ARROW_RETURN_NOT_OK(output->Close());
+      return arrow::Status::OK();
+    }
+
+    // Incremental CSV writing
+    arrow::Status WriteCSVIncremental(
+        const std::string& filename,
+        const std::shared_ptr<arrow::Schema>& schema) {
+      ARROW_ASSIGN_OR_RAISE(
+          auto output,
+          arrow::io::FileOutputStream::Open(filename));
+
+      auto write_options = arrow::csv::WriteOptions::Defaults();
+
+      // Create a CSV writer
+      ARROW_ASSIGN_OR_RAISE(
+          auto writer,
+          arrow::csv::MakeCSVWriter(output, schema, write_options));
+
+      // Write batches
+      for (int i = 0; i < 10; ++i) {
+        ARROW_ASSIGN_OR_RAISE(auto batch, CreateRecordBatch(schema));
+        ARROW_RETURN_NOT_OK(writer->WriteRecordBatch(*batch));
+      }
+
+      // Close the writer
+      ARROW_RETURN_NOT_OK(writer->Close());
+      return arrow::Status::OK();
+    }
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import pyarrow.csv as csv
+
+    # Create sample data
+    table = pa.table({
+        'id': pa.array([1, 2, 3, 4, 5]),
+        'name': pa.array(['Alice', 'Bob', 'Charlie', 'David', 'Eve']),
+        'value': pa.array([10.5, 20.3, 30.1, 40.7, 50.2])
+    })
+
+    # Write table to CSV file
+    csv.write_csv(table, 'output.csv')
+
+    # Write with custom options
+    write_options = csv.WriteOptions(
+        include_header=True,
+        delimiter=',',
+        quoting_style='needed'  # Only quote when necessary
+    )
+    csv.write_csv(table, 'output.csv', write_options)
+
+    # Write to TSV (tab-separated)
+    write_options = csv.WriteOptions(delimiter='\t')
+    csv.write_csv(table, 'output.tsv', write_options)
+
+    # Incremental writing with CSVWriter
+    with csv.CSVWriter('incremental.csv', table.schema) as writer:
+        for i in range(10):
+            batch = create_batch(table.schema)
+            writer.write_batch(batch)
+
+    # Write without header
+    write_options = csv.WriteOptions(include_header=False)
+    csv.write_csv(table, 'no_header.csv', write_options)
+    ```
+  </Tab>
+</Tabs>
+
+## Parse Options
+
+### Delimiters and Quoting
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    auto parse_options = arrow::csv::ParseOptions::Defaults();
+    
+    // Set delimiter
+    parse_options.delimiter = ';';
+    
+    // Configure quoting
+    parse_options.quoting = true;
+    parse_options.quote_char = '"';
+    parse_options.double_quote = true;  // "" escapes quote
+    
+    // Enable escaping
+    parse_options.escaping = true;
+    parse_options.escape_char = '\\';
+    
+    // Allow newlines in quoted values
+    parse_options.newlines_in_values = true;
+    
+    // Ignore empty lines
+    parse_options.ignore_empty_lines = true;
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    parse_options = csv.ParseOptions(
+        delimiter=';',
+        quote_char='"',
+        double_quote=True,
+        escape_char='\\',
+        newlines_in_values=True,
+        ignore_empty_lines=True
+    )
+    
+    table = csv.read_csv('data.csv', parse_options=parse_options)
+    ```
+  </Tab>
+</Tabs>
+
+### Null Value Handling
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    auto convert_options = arrow::csv::ConvertOptions::Defaults();
+    
+    // Specify null value representations
+    convert_options.null_values = {"NA", "NULL", "", "N/A"};
+    
+    // Allow nulls in string columns
+    convert_options.strings_can_be_null = true;
+    
+    // Treat quoted nulls as null values
+    convert_options.quoted_strings_can_be_null = true;
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    convert_options = csv.ConvertOptions(
+        null_values=['NA', 'NULL', '', 'N/A'],
+        strings_can_be_null=True,
+        quoted_strings_can_be_null=True
+    )
+    
+    table = csv.read_csv('data.csv', convert_options=convert_options)
+    ```
+  </Tab>
+</Tabs>
+
+## Type Inference and Conversion
+
+### Automatic Type Inference
+
+By default, Arrow infers column types from the CSV data:
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # Arrow automatically infers types
+    table = csv.read_csv('data.csv')
+    print(table.schema)
+    # Output: id: int64, name: string, value: double
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+**Type Inference**: Arrow samples the first block of data to infer types. For large files with heterogeneous data at the start, you may want to increase `block_size` or specify types explicitly.
+</Note>
+
+### Explicit Type Specification
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    auto convert_options = arrow::csv::ConvertOptions::Defaults();
+    
+    // Specify column types
+    convert_options.column_types = {
+        {"id", arrow::int64()},
+        {"name", arrow::utf8()},
+        {"date", arrow::timestamp(arrow::TimeUnit::SECOND)},
+        {"value", arrow::float64()}
+    };
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    convert_options = csv.ConvertOptions(
+        column_types={
+            'id': pa.int64(),
+            'name': pa.string(),
+            'date': pa.timestamp('s'),
+            'value': pa.float64(),
+            'category': pa.dictionary(pa.int32(), pa.string())
+        }
+    )
+    
+    table = csv.read_csv('data.csv', convert_options=convert_options)
+    ```
+  </Tab>
+</Tabs>
+
+### Boolean Values
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    auto convert_options = arrow::csv::ConvertOptions::Defaults();
+    
+    // Define what represents true/false
+    convert_options.true_values = {"true", "True", "TRUE", "1", "yes"};
+    convert_options.false_values = {"false", "False", "FALSE", "0", "no"};
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    convert_options = csv.ConvertOptions(
+        true_values=['true', 'True', 'TRUE', '1', 'yes', 'Y'],
+        false_values=['false', 'False', 'FALSE', '0', 'no', 'N']
+    )
+    
+    table = csv.read_csv('data.csv', convert_options=convert_options)
+    ```
+  </Tab>
+</Tabs>
+
+## Read Options
+
+### Multi-threading
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    auto read_options = arrow::csv::ReadOptions::Defaults();
+    
+    // Enable multi-threaded parsing
+    read_options.use_threads = true;
+    
+    // Set block size (affects parallelism)
+    read_options.block_size = 1 << 20;  // 1 MB
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    read_options = csv.ReadOptions(
+        use_threads=True,
+        block_size=1024 * 1024  # 1 MB blocks
+    )
+    
+    table = csv.read_csv('data.csv', read_options=read_options)
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+**Block Size**: Larger block sizes reduce overhead but require more memory. Smaller blocks enable better parallelism for multi-core systems. Default is 1 MB.
+</Tip>
+
+### Column Names
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    auto read_options = arrow::csv::ReadOptions::Defaults();
+    
+    // Read CSV without header (provide column names)
+    read_options.column_names = {"id", "name", "value"};
+    
+    // Auto-generate column names
+    read_options.autogenerate_column_names = true;  // f0, f1, f2...
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    # CSV without header
+    read_options = csv.ReadOptions(
+        column_names=['id', 'name', 'value']
+    )
+    table = csv.read_csv('no_header.csv', read_options=read_options)
+    
+    # Auto-generate names
+    read_options = csv.ReadOptions(
+        autogenerate_column_names=True  # Creates f0, f1, f2...
+    )
+    table = csv.read_csv('no_header.csv', read_options=read_options)
+    ```
+  </Tab>
+</Tabs>
+
+### Skipping Rows
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    read_options = csv.ReadOptions(
+        skip_rows=10,                # Skip first 10 rows
+        skip_rows_after_names=5     # Skip 5 rows after header
+    )
+    
+    table = csv.read_csv('data.csv', read_options=read_options)
+    ```
+  </Tab>
+</Tabs>
+
+## Performance Tips
+
+<Tip>
+**Multi-threaded Parsing**: Enable `use_threads` for faster parsing on multi-core systems:
+
+```python
+read_options = csv.ReadOptions(use_threads=True)
+table = csv.read_csv('large_file.csv', read_options=read_options)
+```
+</Tip>
+
+<Tip>
+**Streaming for Large Files**: Use streaming readers to process large files without loading everything into memory:
+
+```python
+reader = csv.open_csv('huge_file.csv')
+for batch in reader:
+    process_batch(batch)
+```
+</Tip>
+
+<Tip>
+**Column Selection**: Read only needed columns to reduce memory usage:
+
+```python
+convert_options = csv.ConvertOptions(
+    include_columns=['col1', 'col2']
+)
+table = csv.read_csv('data.csv', convert_options=convert_options)
+```
+</Tip>
+
+<Note>
+**Block Size Tuning**: Adjust `block_size` based on your file size and system memory:
+- Smaller files: Use default 1 MB
+- Large files with many cores: Increase to 4-8 MB
+- Memory-constrained systems: Decrease to 256-512 KB
+</Note>
+
+## Common Use Cases
+
+### Reading Files with Different Encodings
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # UTF-8 (default)
+    table = csv.read_csv('data.csv')
+    
+    # For other encodings, pre-process with Python
+    import codecs
+    with codecs.open('latin1.csv', 'r', encoding='latin-1') as f:
+        content = f.read()
+    
+    # Then read from buffer
+    import io
+    table = csv.read_csv(io.BytesIO(content.encode('utf-8')))
+    ```
+  </Tab>
+</Tabs>
+
+### Handling Invalid Rows
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    auto parse_options = arrow::csv::ParseOptions::Defaults();
+    
+    // Set a custom invalid row handler
+    parse_options.invalid_row_handler = 
+        [](const arrow::csv::InvalidRow& row) -> arrow::Status {
+      std::cerr << "Invalid row at line " << row.number 
+                << ": " << row.text << std::endl;
+      return arrow::Status::OK();  // Continue processing
+    };
+    ```
+  </Tab>
+</Tabs>
+
+### Dictionary Encoding for String Columns
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # Automatically dictionary-encode low-cardinality strings
+    convert_options = csv.ConvertOptions(
+        auto_dict_encode=True,
+        auto_dict_max_cardinality=1000  # Dict-encode up to 1000 unique values
+    )
+    
+    table = csv.read_csv('data.csv', convert_options=convert_options)
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+**Dictionary Encoding**: Automatically converts string columns with low cardinality to dictionary type, saving memory and improving performance for repetitive string data.
+</Tip>

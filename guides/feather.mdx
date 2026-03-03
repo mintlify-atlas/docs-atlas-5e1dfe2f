@@ -1,0 +1,683 @@
+---
+title: Working with Feather Files
+description: Learn how to read and write Feather files using Apache Arrow in C++ and Python, a lightweight columnar format for fast data interchange.
+---
+
+Feather is a lightweight, language-agnostic columnar file format designed for fast data interchange. It uses the Arrow IPC format internally and provides excellent performance for both reading and writing.
+
+## Overview
+
+Feather has two versions:
+- **Feather V1**: Legacy format with basic features
+- **Feather V2**: Modern format with compression, chunking, and full Arrow type support (recommended)
+
+<Note>
+**Feather vs Parquet**: Feather is optimized for speed and simplicity, while Parquet offers better compression and broader ecosystem support. Use Feather for fast local data interchange and temporary storage.
+</Note>
+
+## Reading Feather Files
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/io/api.h>
+    #include <arrow/ipc/feather.h>
+
+    // Read entire Feather file as a Table
+    arrow::Result<std::shared_ptr<arrow::Table>> ReadFeatherFile(
+        const std::string& filename) {
+      // Open the file
+      ARROW_ASSIGN_OR_RAISE(
+          auto input,
+          arrow::io::ReadableFile::Open(filename));
+
+      // Create a Feather reader
+      ARROW_ASSIGN_OR_RAISE(
+          auto reader,
+          arrow::ipc::feather::Reader::Open(input));
+
+      // Read the entire file as a table
+      std::shared_ptr<arrow::Table> table;
+      ARROW_RETURN_NOT_OK(reader->Read(&table));
+      return table;
+    }
+
+    // Read specific columns
+    arrow::Result<std::shared_ptr<arrow::Table>> ReadFeatherColumns(
+        const std::string& filename,
+        const std::vector<std::string>& column_names) {
+      ARROW_ASSIGN_OR_RAISE(
+          auto input,
+          arrow::io::ReadableFile::Open(filename));
+
+      ARROW_ASSIGN_OR_RAISE(
+          auto reader,
+          arrow::ipc::feather::Reader::Open(input));
+
+      std::shared_ptr<arrow::Table> table;
+      ARROW_RETURN_NOT_OK(reader->Read(column_names, &table));
+      return table;
+    }
+
+    // Read with column indices
+    arrow::Result<std::shared_ptr<arrow::Table>> ReadFeatherColumnIndices(
+        const std::string& filename,
+        const std::vector<int>& column_indices) {
+      ARROW_ASSIGN_OR_RAISE(
+          auto input,
+          arrow::io::ReadableFile::Open(filename));
+
+      ARROW_ASSIGN_OR_RAISE(
+          auto reader,
+          arrow::ipc::feather::Reader::Open(input));
+
+      std::shared_ptr<arrow::Table> table;
+      ARROW_RETURN_NOT_OK(reader->Read(column_indices, &table));
+      return table;
+    }
+
+    // Read with IPC options
+    arrow::Result<std::shared_ptr<arrow::Table>> ReadFeatherWithOptions(
+        const std::string& filename) {
+      ARROW_ASSIGN_OR_RAISE(
+          auto input,
+          arrow::io::ReadableFile::Open(filename));
+
+      // Configure IPC read options
+      arrow::ipc::IpcReadOptions options;
+      options.use_threads = true;
+
+      ARROW_ASSIGN_OR_RAISE(
+          auto reader,
+          arrow::ipc::feather::Reader::Open(input, options));
+
+      std::shared_ptr<arrow::Table> table;
+      ARROW_RETURN_NOT_OK(reader->Read(&table));
+      return table;
+    }
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import pyarrow.feather as feather
+
+    # Read entire Feather file as a Table
+    table = feather.read_table('data.feather')
+    print(f"Loaded table with {table.num_rows} rows")
+
+    # Read as pandas DataFrame
+    df = feather.read_feather('data.feather')
+
+    # Read specific columns
+    table = feather.read_table('data.feather', columns=['col1', 'col2'])
+
+    # Read with column indices
+    table = feather.read_table('data.feather', columns=[0, 1, 2])
+
+    # Read with memory mapping (faster for large files)
+    table = feather.read_table('data.feather', memory_map=True)
+
+    # Read with multi-threading
+    table = feather.read_table(
+        'data.feather',
+        use_threads=True,
+        memory_map=True
+    )
+
+    # Convert to pandas with options
+    df = feather.read_feather(
+        'data.feather',
+        columns=['col1', 'col2'],
+        use_threads=True
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Writing Feather Files
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/io/api.h>
+    #include <arrow/ipc/feather.h>
+
+    // Write Table to Feather file
+    arrow::Status WriteFeatherFile(
+        const std::string& filename,
+        const std::shared_ptr<arrow::Table>& table) {
+      // Open output stream
+      ARROW_ASSIGN_OR_RAISE(
+          auto output,
+          arrow::io::FileOutputStream::Open(filename));
+
+      // Write the table to Feather (V2 by default)
+      ARROW_RETURN_NOT_OK(
+          arrow::ipc::feather::WriteTable(*table, output.get()));
+
+      return arrow::Status::OK();
+    }
+
+    // Write with compression
+    arrow::Status WriteFeatherWithCompression(
+        const std::string& filename,
+        const std::shared_ptr<arrow::Table>& table) {
+      ARROW_ASSIGN_OR_RAISE(
+          auto output,
+          arrow::io::FileOutputStream::Open(filename));
+
+      // Configure write properties
+      arrow::ipc::feather::WriteProperties properties;
+      properties.version = arrow::ipc::feather::kFeatherV2Version;
+      properties.chunksize = 65536;  // 64K rows per chunk
+      properties.compression = arrow::Compression::LZ4_FRAME;
+      properties.compression_level = arrow::util::kUseDefaultCompressionLevel;
+
+      ARROW_RETURN_NOT_OK(
+          arrow::ipc::feather::WriteTable(*table, output.get(), properties));
+
+      return arrow::Status::OK();
+    }
+
+    // Write Feather V1
+    arrow::Status WriteFeatherV1(
+        const std::string& filename,
+        const std::shared_ptr<arrow::Table>& table) {
+      ARROW_ASSIGN_OR_RAISE(
+          auto output,
+          arrow::io::FileOutputStream::Open(filename));
+
+      arrow::ipc::feather::WriteProperties properties;
+      properties.version = arrow::ipc::feather::kFeatherV1Version;
+
+      ARROW_RETURN_NOT_OK(
+          arrow::ipc::feather::WriteTable(*table, output.get(), properties));
+
+      return arrow::Status::OK();
+    }
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import pyarrow.feather as feather
+
+    # Create sample data
+    table = pa.table({
+        'id': pa.array([1, 2, 3, 4, 5]),
+        'name': pa.array(['Alice', 'Bob', 'Charlie', 'David', 'Eve']),
+        'value': pa.array([10.5, 20.3, 30.1, 40.7, 50.2])
+    })
+
+    # Write table to Feather V2 (default)
+    feather.write_feather(table, 'output.feather')
+
+    # Write pandas DataFrame
+    import pandas as pd
+    df = table.to_pandas()
+    feather.write_feather(df, 'output.feather')
+
+    # Write with LZ4 compression (default for V2)
+    feather.write_feather(
+        table,
+        'output_compressed.feather',
+        compression='lz4'
+    )
+
+    # Write with ZSTD compression
+    feather.write_feather(
+        table,
+        'output_zstd.feather',
+        compression='zstd',
+        compression_level=5
+    )
+
+    # Write uncompressed
+    feather.write_feather(
+        table,
+        'output_uncompressed.feather',
+        compression='uncompressed'
+    )
+
+    # Write with custom chunk size
+    feather.write_feather(
+        table,
+        'output_chunked.feather',
+        chunksize=10000  # 10K rows per chunk
+    )
+
+    # Write Feather V1 (legacy)
+    feather.write_feather(
+        table,
+        'output_v1.feather',
+        version=1
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Feather V1 vs V2
+
+### Feather V2 (Recommended)
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # V2 with compression and chunking (default)
+    feather.write_feather(
+        table,
+        'data_v2.feather',
+        version=2,              # Default
+        compression='lz4',      # LZ4 or ZSTD
+        chunksize=65536         # Rows per chunk
+    )
+    ```
+  </Tab>
+</Tabs>
+
+**Feather V2 Features:**
+- Compression support (LZ4, ZSTD)
+- Chunking for better memory management
+- Full Arrow type system support
+- Better performance for large files
+
+### Feather V1 (Legacy)
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # V1 without compression
+    feather.write_feather(
+        table,
+        'data_v1.feather',
+        version=1
+    )
+    ```
+  </Tab>
+</Tabs>
+
+**Feather V1 Limitations:**
+- No compression support
+- No chunking
+- Limited type support
+- Single chunk per column (memory intensive)
+
+<Note>
+**Version Compatibility**: Use Feather V2 (version=2) unless you need compatibility with older software that only supports V1.
+</Note>
+
+## Configuration Options
+
+### Compression
+
+Feather V2 supports multiple compression algorithms:
+
+- **LZ4**: Very fast compression/decompression (default)
+- **ZSTD**: Better compression ratio, slightly slower
+- **UNCOMPRESSED**: No compression, fastest but largest files
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # LZ4 compression (default, fastest)
+    feather.write_feather(table, 'output.feather', compression='lz4')
+
+    # ZSTD compression (better ratio)
+    feather.write_feather(
+        table,
+        'output.feather',
+        compression='zstd',
+        compression_level=3  # 1-22, higher = better compression
+    )
+
+    # No compression
+    feather.write_feather(table, 'output.feather', compression='uncompressed')
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+**Compression Choice**:
+- Use **LZ4** for maximum speed (reading/writing)
+- Use **ZSTD** for better compression when file size matters
+- Use **uncompressed** for maximum read speed when disk I/O is not a bottleneck
+</Tip>
+
+### Chunk Size
+
+Chunk size controls how data is divided within the file:
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    arrow::ipc::feather::WriteProperties properties;
+    properties.chunksize = 65536;  // 64K rows per chunk
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    # Smaller chunks for random access
+    feather.write_feather(table, 'output.feather', chunksize=10000)
+
+    # Larger chunks for sequential reading
+    feather.write_feather(table, 'output.feather', chunksize=1000000)
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+**Chunk Size Trade-offs**:
+- **Smaller chunks** (10K-50K rows): Better for random access, higher metadata overhead
+- **Larger chunks** (100K-1M rows): Better compression, lower overhead, more memory during reads
+- **Default** (64K rows): Good balance for most use cases
+</Note>
+
+## Memory Mapping
+
+Memory mapping can improve read performance for large files:
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # Enable memory mapping
+    table = feather.read_table('large_file.feather', memory_map=True)
+
+    # Memory mapping with multi-threading
+    table = feather.read_table(
+        'large_file.feather',
+        memory_map=True,
+        use_threads=True
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+**When to Use Memory Mapping**:
+- Large files that don't fit in memory
+- Files accessed multiple times
+- Read-only access patterns
+- Local disk storage (not network)
+</Tip>
+
+## Reading Metadata
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    auto reader = arrow::ipc::feather::Reader::Open(input).ValueOrDie();
+
+    // Get version
+    int version = reader->version();
+    std::cout << "Feather version: " << version << std::endl;
+
+    // Get schema
+    auto schema = reader->schema();
+    std::cout << schema->ToString() << std::endl;
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    # Feather doesn't expose a separate metadata API
+    # Read the table to access schema
+    table = feather.read_table('data.feather')
+    
+    print(f"Schema: {table.schema}")
+    print(f"Number of rows: {table.num_rows}")
+    print(f"Number of columns: {table.num_columns}")
+    print(f"Column names: {table.column_names}")
+    
+    # Check for metadata
+    if table.schema.metadata:
+        for key, value in table.schema.metadata.items():
+            print(f"{key}: {value}")
+    ```
+  </Tab>
+</Tabs>
+
+## Performance Tips
+
+<Tip>
+**Zero-Copy Reads**: Feather supports zero-copy reads when using memory mapping, making it extremely fast:
+
+```python
+table = feather.read_table('data.feather', memory_map=True)
+```
+</Tip>
+
+<Tip>
+**Multi-threaded Reading**: Enable multi-threading for faster reads on multi-core systems:
+
+```python
+table = feather.read_table(
+    'data.feather',
+    use_threads=True,
+    memory_map=True
+)
+```
+</Tip>
+
+<Tip>
+**Column Pruning**: Read only needed columns to reduce I/O:
+
+```python
+table = feather.read_table('data.feather', columns=['col1', 'col2'])
+```
+</Tip>
+
+<Tip>
+**Write Performance**: For maximum write speed, use uncompressed format:
+
+```python
+feather.write_feather(table, 'output.feather', compression='uncompressed')
+```
+
+For a good balance of speed and size, use LZ4 (default):
+
+```python
+feather.write_feather(table, 'output.feather', compression='lz4')
+```
+</Tip>
+
+## Working with Pandas
+
+Feather has excellent pandas integration:
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pandas as pd
+    import pyarrow.feather as feather
+
+    # Write pandas DataFrame
+    df = pd.DataFrame({
+        'id': [1, 2, 3],
+        'name': ['Alice', 'Bob', 'Charlie'],
+        'value': [10.5, 20.3, 30.1]
+    })
+    feather.write_feather(df, 'output.feather')
+
+    # Read as pandas DataFrame
+    df = feather.read_feather('output.feather')
+
+    # Preserve index when writing
+    df = df.set_index('id')
+    feather.write_feather(df, 'with_index.feather')  # V2 preserves index
+
+    # Read back with index
+    df = feather.read_feather('with_index.feather')
+    print(df.index.name)  # 'id'
+
+    # Write without index (V1 style)
+    df_no_index = df.reset_index(drop=True)
+    feather.write_feather(df_no_index, 'no_index.feather', version=1)
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+**Pandas Index Handling**:
+- **Feather V2**: Automatically preserves pandas index
+- **Feather V1**: Does not preserve index (creates RangeIndex on read)
+</Note>
+
+## Use Cases
+
+### Fast Data Interchange
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # Python to Python data sharing
+    # Writer process
+    import pyarrow.feather as feather
+    feather.write_feather(df, 'shared_data.feather')
+
+    # Reader process
+    df = feather.read_feather('shared_data.feather')
+    ```
+  </Tab>
+</Tabs>
+
+### Temporary Storage
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # Save intermediate results
+    import pyarrow.feather as feather
+
+    # Process data in stages
+    stage1_result = process_stage1(data)
+    feather.write_feather(stage1_result, 'temp_stage1.feather')
+
+    # Load for next stage
+    stage1_result = feather.read_feather('temp_stage1.feather')
+    stage2_result = process_stage2(stage1_result)
+    ```
+  </Tab>
+</Tabs>
+
+### Data Caching
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import os
+    import pyarrow.feather as feather
+
+    cache_file = 'cache.feather'
+
+    if os.path.exists(cache_file):
+        # Load from cache
+        df = feather.read_feather(cache_file)
+    else:
+        # Compute and cache
+        df = expensive_computation()
+        feather.write_feather(df, cache_file)
+    ```
+  </Tab>
+</Tabs>
+
+## Compatibility Considerations
+
+<Note>
+**Language Support**: Feather is supported in:
+- Python (PyArrow)
+- R (feather package)
+- Julia (Feather.jl)
+- JavaScript (apache-arrow)
+
+Files written in one language can be read in another.
+</Note>
+
+<Note>
+**Version Compatibility**:
+- Feather V2 requires Arrow >= 0.17.0
+- Feather V1 works with older Arrow versions
+- Always use V2 for new projects unless compatibility is required
+</Note>
+
+## Comparison with Other Formats
+
+### Feather vs Parquet
+
+| Feature | Feather | Parquet |
+|---------|---------|----------|
+| **Speed** | Faster reads/writes | Slower but optimized |
+| **Compression** | Good (LZ4, ZSTD) | Excellent (many codecs) |
+| **File Size** | Larger | Smaller |
+| **Ecosystem** | Limited | Extensive |
+| **Use Case** | Local interchange | Long-term storage |
+
+<Tip>
+**When to Use Feather**:
+- Fast local data interchange
+- Temporary data storage
+- Data caching
+- Quick serialization/deserialization
+
+**When to Use Parquet**:
+- Long-term data storage
+- Data lakes and warehouses
+- Wide ecosystem compatibility
+- Maximum compression needed
+</Tip>
+
+### Feather vs CSV
+
+| Feature | Feather | CSV |
+|---------|---------|------|
+| **Speed** | Much faster | Slower |
+| **Type Preservation** | Perfect | Requires parsing |
+| **File Size** | Smaller (compressed) | Larger (text) |
+| **Human Readable** | No | Yes |
+| **Use Case** | Machine interchange | Human viewing |
+
+## Common Patterns
+
+### Converting Between Formats
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow.feather as feather
+    import pyarrow.parquet as pq
+    import pyarrow.csv as csv
+
+    # Parquet to Feather (for faster reads)
+    table = pq.read_table('data.parquet')
+    feather.write_feather(table, 'data.feather')
+
+    # CSV to Feather (preserve types)
+    table = csv.read_csv('data.csv')
+    feather.write_feather(table, 'data.feather')
+
+    # Feather to Parquet (for storage)
+    table = feather.read_table('data.feather')
+    pq.write_table(table, 'data.parquet', compression='snappy')
+    ```
+  </Tab>
+</Tabs>
+
+### Batch Processing
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow.feather as feather
+
+    # Write multiple DataFrames
+    for i, batch in enumerate(data_batches):
+        feather.write_feather(batch, f'batch_{i}.feather')
+
+    # Read and combine
+    import pyarrow as pa
+    tables = [feather.read_table(f'batch_{i}.feather') for i in range(10)]
+    combined = pa.concat_tables(tables)
+    ```
+  </Tab>
+</Tabs>

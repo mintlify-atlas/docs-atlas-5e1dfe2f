@@ -1,0 +1,514 @@
+---
+title: Schema Classes
+description: Apache Arrow schema, field, and data type classes
+---
+
+## Schema
+
+A Schema defines the structure of tabular data with named fields and types.
+
+```python
+import pyarrow as pa
+
+schema = pa.schema([
+    ('name', pa.string()),
+    ('age', pa.int64()),
+    ('income', pa.float64())
+])
+print(schema)
+```
+
+### schema()
+
+Create a Schema from field definitions.
+
+```python
+pa.schema(fields, metadata=None)
+```
+
+<ParamField path="fields" type="list">
+  List of Field objects or (name, type) tuples.
+</ParamField>
+
+<ParamField path="metadata" type="dict" default="None">
+  Optional metadata as key-value pairs.
+</ParamField>
+
+<ResponseField name="schema" type="pyarrow.Schema">
+  A Schema object.
+</ResponseField>
+
+### Properties
+
+#### names
+
+List of field names in the schema.
+
+```python
+schema = pa.schema([('a', pa.int64()), ('b', pa.string())])
+print(schema.names)  # ['a', 'b']
+```
+
+<ResponseField name="names" type="list of str">
+  The field names.
+</ResponseField>
+
+#### types
+
+List of field types in the schema.
+
+```python
+schema = pa.schema([('a', pa.int64()), ('b', pa.string())])
+print(schema.types)  # [DataType(int64), DataType(string)]
+```
+
+<ResponseField name="types" type="list of DataType">
+  The field types.
+</ResponseField>
+
+#### metadata
+
+Custom metadata attached to the schema.
+
+```python
+schema = pa.schema([('a', pa.int64())], metadata={'key': 'value'})
+print(schema.metadata)  # {b'key': b'value'}
+```
+
+<ResponseField name="metadata" type="dict">
+  The schema metadata as bytes.
+</ResponseField>
+
+### Methods
+
+#### field()
+
+Select a field by name or index.
+
+```python
+schema.field(i)
+```
+
+<ParamField path="i" type="int or str">
+  Field index or name.
+</ParamField>
+
+<ResponseField name="field" type="pyarrow.Field">
+  The selected field.
+</ResponseField>
+
+#### append()
+
+Add a field to the schema.
+
+```python
+schema.append(field)
+```
+
+<ParamField path="field" type="pyarrow.Field">
+  Field to append.
+</ParamField>
+
+<ResponseField name="schema" type="pyarrow.Schema">
+  A new schema with the appended field.
+</ResponseField>
+
+#### insert()
+
+Insert a field at a specific position.
+
+```python
+schema.insert(i, field)
+```
+
+<ParamField path="i" type="int">
+  Position to insert the field.
+</ParamField>
+
+<ParamField path="field" type="pyarrow.Field">
+  Field to insert.
+</ParamField>
+
+<ResponseField name="schema" type="pyarrow.Schema">
+  A new schema with the inserted field.
+</ResponseField>
+
+#### remove()
+
+Remove a field by index.
+
+```python
+schema.remove(i)
+```
+
+<ParamField path="i" type="int">
+  Index of field to remove.
+</ParamField>
+
+<ResponseField name="schema" type="pyarrow.Schema">
+  A new schema without the removed field.
+</ResponseField>
+
+#### equals()
+
+Check if two schemas are equal.
+
+```python
+schema.equals(other, check_metadata=True)
+```
+
+<ParamField path="other" type="pyarrow.Schema">
+  Schema to compare with.
+</ParamField>
+
+<ParamField path="check_metadata" type="bool" default="True">
+  Whether to compare metadata.
+</ParamField>
+
+<ResponseField name="equal" type="bool">
+  True if schemas are equal.
+</ResponseField>
+
+## Field
+
+A Field represents a named column with a data type.
+
+```python
+import pyarrow as pa
+
+field = pa.field('age', pa.int64(), nullable=True)
+print(field)
+```
+
+### field()
+
+Create a Field.
+
+```python
+pa.field(name, type, nullable=True, metadata=None)
+```
+
+<ParamField path="name" type="str">
+  Name of the field.
+</ParamField>
+
+<ParamField path="type" type="pyarrow.DataType">
+  Data type of the field.
+</ParamField>
+
+<ParamField path="nullable" type="bool" default="True">
+  Whether the field can contain null values.
+</ParamField>
+
+<ParamField path="metadata" type="dict" default="None">
+  Optional metadata.
+</ParamField>
+
+<ResponseField name="field" type="pyarrow.Field">
+  A Field object.
+</ResponseField>
+
+### Properties
+
+#### name
+
+The field name.
+
+```python
+field = pa.field('age', pa.int64())
+print(field.name)  # 'age'
+```
+
+<ResponseField name="name" type="str">
+  The field name.
+</ResponseField>
+
+#### type
+
+The field data type.
+
+```python
+field = pa.field('age', pa.int64())
+print(field.type)  # int64
+```
+
+<ResponseField name="type" type="pyarrow.DataType">
+  The field's data type.
+</ResponseField>
+
+#### nullable
+
+Whether the field can contain nulls.
+
+```python
+field = pa.field('age', pa.int64(), nullable=False)
+print(field.nullable)  # False
+```
+
+<ResponseField name="nullable" type="bool">
+  True if the field can be null.
+</ResponseField>
+
+## DataType
+
+Base class for all Arrow data types.
+
+### Primitive Types
+
+#### Numeric Types
+
+```python
+import pyarrow as pa
+
+# Integer types
+pa.int8()    # 8-bit signed integer
+pa.int16()   # 16-bit signed integer
+pa.int32()   # 32-bit signed integer
+pa.int64()   # 64-bit signed integer
+
+pa.uint8()   # 8-bit unsigned integer
+pa.uint16()  # 16-bit unsigned integer
+pa.uint32()  # 32-bit unsigned integer
+pa.uint64()  # 64-bit unsigned integer
+
+# Floating point types
+pa.float16()  # 16-bit float (half precision)
+pa.float32()  # 32-bit float
+pa.float64()  # 64-bit float (double precision)
+```
+
+#### Boolean Type
+
+```python
+pa.bool_()  # Boolean (true/false)
+```
+
+#### String and Binary Types
+
+```python
+pa.string()        # Variable-length UTF-8 string
+pa.utf8()          # Alias for string()
+pa.binary()        # Variable-length binary
+pa.large_string()  # Large (64-bit offset) string
+pa.large_binary()  # Large (64-bit offset) binary
+```
+
+#### Null Type
+
+```python
+pa.null()  # Null type (only contains nulls)
+```
+
+### Temporal Types
+
+#### Date Types
+
+```python
+pa.date32()  # Days since UNIX epoch (32-bit)
+pa.date64()  # Milliseconds since UNIX epoch (64-bit)
+```
+
+#### Time Types
+
+```python
+pa.time32('s')   # Time with second unit
+pa.time32('ms')  # Time with millisecond unit
+pa.time64('us')  # Time with microsecond unit
+pa.time64('ns')  # Time with nanosecond unit
+```
+
+#### Timestamp Types
+
+```python
+pa.timestamp('s')    # Timestamp with second unit
+pa.timestamp('ms')   # Timestamp with millisecond unit
+pa.timestamp('us')   # Timestamp with microsecond unit
+pa.timestamp('ns')   # Timestamp with nanosecond unit
+
+# With timezone
+pa.timestamp('ns', tz='America/New_York')
+pa.timestamp('ms', tz='UTC')
+```
+
+<ParamField path="unit" type="str">
+  Time unit: 's', 'ms', 'us', or 'ns'.
+</ParamField>
+
+<ParamField path="tz" type="str" default="None">
+  Timezone name (IANA timezone database).
+</ParamField>
+
+<ResponseField name="type" type="pyarrow.TimestampType">
+  A timestamp type.
+</ResponseField>
+
+#### Duration Types
+
+```python
+pa.duration('s')   # Duration in seconds
+pa.duration('ms')  # Duration in milliseconds
+pa.duration('us')  # Duration in microseconds
+pa.duration('ns')  # Duration in nanoseconds
+```
+
+### Nested Types
+
+#### List Types
+
+```python
+# Variable-length list
+pa.list_(pa.int64())  # List of int64
+
+# Fixed-size list
+from pyarrow import list as pa_list
+pa.list_(pa.float32(), 3)  # List of exactly 3 float32 values
+
+# Large list (64-bit offsets)
+pa.large_list(pa.string())
+```
+
+<ParamField path="value_type" type="pyarrow.DataType">
+  Type of list elements.
+</ParamField>
+
+<ParamField path="list_size" type="int" default="-1">
+  Fixed size for list (only for fixed-size lists).
+</ParamField>
+
+<ResponseField name="type" type="pyarrow.ListType">
+  A list type.
+</ResponseField>
+
+#### Struct Types
+
+```python
+pa.struct([
+    ('x', pa.int64()),
+    ('y', pa.float64()),
+    ('name', pa.string())
+])
+
+# Or using Field objects
+pa.struct([
+    pa.field('x', pa.int64(), nullable=False),
+    pa.field('y', pa.float64())
+])
+```
+
+<ParamField path="fields" type="list">
+  List of Field objects or (name, type) tuples.
+</ParamField>
+
+<ResponseField name="type" type="pyarrow.StructType">
+  A struct type.
+</ResponseField>
+
+#### Map Types
+
+```python
+pa.map_(pa.string(), pa.int64())  # Map from string to int64
+```
+
+<ParamField path="key_type" type="pyarrow.DataType">
+  Type of map keys.
+</ParamField>
+
+<ParamField path="item_type" type="pyarrow.DataType">
+  Type of map values.
+</ParamField>
+
+<ResponseField name="type" type="pyarrow.MapType">
+  A map type.
+</ResponseField>
+
+### Dictionary Type
+
+```python
+pa.dictionary(pa.int32(), pa.string())  # Dictionary encoded strings
+```
+
+<ParamField path="index_type" type="pyarrow.DataType">
+  Type for dictionary indices.
+</ParamField>
+
+<ParamField path="value_type" type="pyarrow.DataType">
+  Type of dictionary values.
+</ParamField>
+
+<ResponseField name="type" type="pyarrow.DictionaryType">
+  A dictionary type.
+</ResponseField>
+
+### Decimal Types
+
+```python
+pa.decimal128(precision=10, scale=2)  # 128-bit decimal
+pa.decimal256(precision=38, scale=10) # 256-bit decimal
+```
+
+<ParamField path="precision" type="int">
+  Total number of digits.
+</ParamField>
+
+<ParamField path="scale" type="int">
+  Number of digits after decimal point.
+</ParamField>
+
+<ResponseField name="type" type="pyarrow.Decimal128Type or pyarrow.Decimal256Type">
+  A decimal type.
+</ResponseField>
+
+## Utility Functions
+
+### unify_schemas()
+
+Unify multiple schemas into one.
+
+```python
+pa.unify_schemas(schemas)
+```
+
+<ParamField path="schemas" type="list of Schema">
+  Schemas to unify.
+</ParamField>
+
+<ResponseField name="schema" type="pyarrow.Schema">
+  Unified schema with all fields.
+</ResponseField>
+
+### infer_type()
+
+Infer Arrow type from Python values.
+
+```python
+pa.infer_type([1, 2, 3])       # int64
+pa.infer_type(['a', 'b', 'c']) # string
+```
+
+<ParamField path="values" type="list">
+  Python values to infer type from.
+</ParamField>
+
+<ResponseField name="type" type="pyarrow.DataType">
+  The inferred data type.
+</ResponseField>
+
+### from_numpy_dtype()
+
+Convert NumPy dtype to Arrow type.
+
+```python
+import numpy as np
+import pyarrow as pa
+
+pa.from_numpy_dtype(np.dtype('int32'))  # int32
+pa.from_numpy_dtype(np.dtype('float64')) # float64
+```
+
+<ParamField path="dtype" type="numpy.dtype">
+  NumPy data type.
+</ParamField>
+
+<ResponseField name="type" type="pyarrow.DataType">
+  Corresponding Arrow type.
+</ResponseField>

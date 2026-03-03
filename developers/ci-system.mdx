@@ -1,0 +1,502 @@
+---
+title: CI/CD System Overview
+description: Understanding Apache Arrow's continuous integration and deployment infrastructure with GitHub Actions, Docker, and Crossbow
+---
+
+Apache Arrow uses a comprehensive CI/CD system to test and build across multiple languages, platforms, compilers, and dependency combinations. This guide explains how the system works and how to interact with it.
+
+## Overview
+
+Arrow's CI infrastructure ensures code quality across:
+
+- **Languages**: C++, Python, R, Java, JavaScript, Go, Rust, C#, Ruby, MATLAB
+- **Operating Systems**: Linux (multiple distros), macOS, Windows
+- **Compilers**: GCC, Clang, MSVC, various versions
+- **Package Managers**: conda, pip, Homebrew, apt, yum, vcpkg
+- **Architectures**: x86_64, ARM64, s390x (big-endian)
+
+## Architecture Components
+
+The CI system consists of three main components:
+
+### 1. GitHub Actions (Action-Triggered Builds)
+
+Workflows in `.github/workflows/` run automatically on pull requests and merges:
+
+```
+.github/workflows/
+├── cpp.yml              # C++ builds and tests
+├── python.yml           # Python builds and tests  
+├── r.yml                # R package checks
+├── dev.yml              # Linting, PR merge checks
+├── dev_pr.yml           # PR title formatting, labels
+├── comment_bot.yml      # Bot commands (@github-actions)
+└── ...
+```
+
+### 2. Docker (Portable Builds)
+
+Docker provides reproducible build environments:
+
+- **compose.yaml**: Defines services for different build configurations
+- **.env**: Default environment variable values
+- **ci/docker/**: Dockerfiles for each build environment
+
+Example services:
+- `ubuntu-cpp`: Ubuntu-based C++ development
+- `conda-python`: Python builds with conda
+- `fedora-cpp`: Fedora-based builds
+
+### 3. Crossbow (Extended/Nightly Builds)
+
+Crossbow coordinates complex, long-running builds:
+
+- **dev/tasks/**: Build task definitions
+- **dev/tasks/tasks.yml**: Task configuration and groups
+- Triggered manually or on schedule
+
+## Key Directories
+
+| Directory | Purpose |
+|-----------|----------|
+| `.github/workflows/` | GitHub Actions workflow definitions |
+| `ci/docker/` | Dockerfiles for build environments |
+| `ci/scripts/` | Build and test scripts |
+| `dev/tasks/` | Crossbow task templates |
+| `dev/archery/` | Archery CLI tool source |
+
+## GitHub Actions Workflows
+
+### Language-Specific Workflows
+
+Each major language has dedicated workflows:
+
+<CodeGroup>
+
+```yaml cpp.yml
+name: C++
+on:
+  pull_request:
+    paths:
+      - 'cpp/**'
+      - '.github/workflows/cpp.yml'
+      # ...
+jobs:
+  build:
+    # Matrix of OS, compiler, build type
+```
+
+```yaml python.yml  
+name: Python
+on:
+  pull_request:
+    paths:
+      - 'python/**'
+      - 'cpp/**'
+      - '.github/workflows/python.yml'
+      # ...
+jobs:
+  test:
+    # Matrix of Python versions, platforms
+```
+
+```yaml r.yml
+name: R
+on:
+  pull_request:
+    paths:
+      - 'r/**'
+      - 'cpp/**'
+      - '.github/workflows/r.yml'
+      # ...
+jobs:
+  check:
+    # R CMD check on multiple platforms
+```
+
+</CodeGroup>
+
+### Bot Workflows
+
+#### comment_bot.yml
+
+Responds to special comments on pull requests:
+
+```bash
+# Trigger Crossbow builds
+@github-actions crossbow submit <task-name>
+
+# Example: Run all C++ tests
+@github-actions crossbow submit test-cpp-linux
+
+# Example: Rebase PR
+@github-actions rebase
+```
+
+#### dev_pr.yml
+
+Automatically:
+- Validates PR title format (`GH-12345: [Component] Description`)
+- Links PR to GitHub issue
+- Adds relevant labels
+- Assigns issue to PR author
+
+## Using Docker for Local Development
+
+### Building with Docker Compose
+
+Build Arrow in a reproducible environment:
+
+```bash
+# Build Ubuntu C++ environment
+docker compose build ubuntu-cpp
+
+# Run build
+docker compose run ubuntu-cpp
+
+# Build specific components
+docker compose run ubuntu-cpp bash -c "cmake ... && make"
+```
+
+### Using Archery (Recommended)
+
+Archery simplifies Docker interactions:
+
+```bash
+# Install Archery
+pip install -e dev/archery
+
+# Run Docker service (automatically builds dependencies)
+archery docker run ubuntu-cpp
+
+# Execute commands in container
+archery docker run ubuntu-cpp bash
+
+# Run tests
+archery docker run ubuntu-cpp make unittest
+```
+
+<Tip>
+Archery automatically handles dependency resolution between Docker services, building prerequisite images as needed.
+</Tip>
+
+## Crossbow System
+
+Crossbow manages extended builds that are too resource-intensive for PR checks.
+
+### Task Structure
+
+```
+dev/tasks/
+├── tasks.yml           # Task definitions and groups
+├── linux-packages/     # Linux package builds
+├── conda-recipes/      # Conda package recipes
+├── python-wheels/      # PyPI wheel builds
+├── r/                  # CRAN package builds
+└── ...
+```
+
+### Submitting Crossbow Tasks
+
+<Steps>
+
+### Via GitHub Comment (Recommended)
+
+Comment on a PR:
+
+```bash
+@github-actions crossbow submit --group cpp
+```
+
+### Via Archery CLI
+
+From your local machine:
+
+```bash
+# Submit single task
+archery crossbow submit test-cpp-linux
+
+# Submit task group
+archery crossbow submit --group python
+
+# List available tasks
+archery crossbow task list
+
+# Check task status
+archery crossbow status <run-id>
+```
+
+</Steps>
+
+### Common Task Groups
+
+| Group | Description |
+|-------|-------------|
+| `cpp` | All C++ builds across platforms |
+| `python` | Python wheel builds |
+| `r` | R package builds |
+| `wheel-linux` | Linux Python wheels |
+| `wheel-macos` | macOS Python wheels |
+| `wheel-windows` | Windows Python wheels |
+| `conda` | Conda package builds |
+| `integration` | Cross-language integration tests |
+
+## Environment Configuration
+
+### compose.yaml and .env
+
+Docker services are configured through environment variables:
+
+```yaml compose.yaml
+services:
+  ubuntu-cpp:
+    build:
+      context: .
+      dockerfile: ci/docker/ubuntu-${UBUNTU}.dockerfile
+      args:
+        arch: ${ARCH:-amd64}
+        llvm: ${LLVM:-15}
+```
+
+```bash .env
+UBUNTU=22.04
+ARCH=amd64
+LLVM=15
+GO=1.21.0
+JDK=11
+```
+
+Override defaults:
+
+```bash
+# Use different Ubuntu version
+UBUNTU=24.04 docker compose run ubuntu-cpp
+
+# Use ARM architecture
+ARCH=arm64v8 docker compose run ubuntu-cpp
+```
+
+## CI Scripts
+
+Reusable scripts in `ci/scripts/` handle common tasks:
+
+| Script | Purpose |
+|--------|----------|
+| `cpp_build.sh` | Build Arrow C++ |
+| `python_build.sh` | Build PyArrow |
+| `r_build.sh` | Build R package |
+| `java_build.sh` | Build Java components |
+| `install_conda.sh` | Set up conda environment |
+| `util_*.sh` | Utility functions |
+
+Scripts accept environment variables for configuration:
+
+```bash
+# C++ build with specific options
+export ARROW_BUILD_TESTS=ON
+export ARROW_COMPUTE=ON
+export ARROW_FLIGHT=ON
+ci/scripts/cpp_build.sh $(pwd) $(pwd)/build
+```
+
+## Nightly Builds
+
+Nightly builds run automatically via Crossbow:
+
+- **Schedule**: Daily at 00:00 UTC
+- **Tasks**: Comprehensive builds for all languages/platforms
+- **Artifacts**: Published to Apache artifactory
+- **Purpose**: Catch integration issues early
+
+View results: https://github.com/ursacomputing/crossbow/actions
+
+## Common CI Tasks
+
+### Running Specific Tests
+
+<Tabs>
+
+<Tab title="C++">
+```bash
+# Run C++ tests locally with Docker
+archery docker run ubuntu-cpp
+
+# Inside container
+cmake --build build --target unittest
+
+# Or trigger on PR
+@github-actions crossbow submit test-cpp-linux
+```
+</Tab>
+
+<Tab title="Python">
+```bash
+# Run Python tests locally
+archery docker run conda-python
+
+# Inside container
+pytest pyarrow/tests
+
+# Or trigger on PR
+@github-actions crossbow submit test-python-3.11-linux
+```
+</Tab>
+
+<Tab title="R">
+```bash
+# Run R checks locally
+archery docker run r
+
+# Inside container
+R CMD check arrow_*.tar.gz
+
+# Or trigger on PR
+@github-actions crossbow submit test-r-linux
+```
+</Tab>
+
+</Tabs>
+
+### Building Release Artifacts
+
+```bash
+# Python wheels for all platforms
+@github-actions crossbow submit --group wheel
+
+# Linux packages
+@github-actions crossbow submit --group linux-packages
+
+# Conda packages
+@github-actions crossbow submit --group conda
+
+# R CRAN binaries
+@github-actions crossbow submit --group r
+```
+
+### Debugging CI Failures
+
+<Steps>
+
+### Identify the failing workflow
+
+Check the PR's "Checks" tab for failures.
+
+### Reproduce locally with Docker
+
+```bash
+# Use the same Docker service
+archery docker run <service-name>
+```
+
+### Check logs
+
+```bash
+# View GitHub Actions logs
+# Click on failed job → View details
+
+# For Crossbow jobs
+archery crossbow status <run-id>
+```
+
+### Run the exact failing command
+
+Copy from logs and run in Docker container.
+
+</Steps>
+
+## CI Best Practices
+
+<AccordionGroup>
+
+<Accordion title="Minimize CI runtime">
+- Only trigger relevant workflows (via path filters)
+- Use matrix builds to parallelize
+- Cache dependencies when possible
+- Use Crossbow for expensive builds, not PR checks
+</Accordion>
+
+<Accordion title="Handle flaky tests">
+- Mark flaky tests with `@pytest.mark.flaky`
+- Use `ARROW_ENABLE_TIMING_TESTS=OFF` to disable timing-dependent tests
+- Report persistent flakes on GitHub
+</Accordion>
+
+<Accordion title="Keep Docker images up-to-date">
+- Regularly update base images
+- Pin dependency versions for reproducibility
+- Test locally before pushing changes
+</Accordion>
+
+<Accordion title="Document new CI changes">
+- Update this guide for workflow changes
+- Add comments in workflow files
+- Announce major changes on mailing list
+</Accordion>
+
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+
+<Accordion title="Docker build fails with network errors">
+**Error**: `Failed to download package`
+
+**Solution**: Docker may have network issues. Try:
+```bash
+docker compose build --no-cache <service>
+```
+</Accordion>
+
+<Accordion title="Crossbow task stuck in pending">
+**Issue**: Task never starts
+
+**Solution**: 
+- Check GitHub Actions quota
+- Verify task name is correct
+- Check Crossbow repo for errors
+</Accordion>
+
+<Accordion title="Tests pass locally but fail in CI">
+**Common causes**:
+- Environment differences (locale, timezone)
+- Missing test dependencies
+- Race conditions (use `pytest-xdist` carefully)
+- Disk space issues on CI runners
+</Accordion>
+
+<Accordion title="Can't push Docker image">
+**Error**: Permission denied
+
+**Solution**: Only committers can push to Apache registries. For PRs, images build locally or in CI.
+</Accordion>
+
+</AccordionGroup>
+
+## Resources
+
+<CardGroup cols={2}>
+
+<Card title="Archery Documentation" icon="bow-arrow">
+  Learn more about the Archery CLI tool
+</Card>
+
+<Card title="Crossbow Guide" icon="crosshairs">
+  Deep dive into Crossbow task system
+</Card>
+
+<Card title="Docker Guide" icon="docker" href="/developers/docker">
+  Detailed Docker usage for development
+</Card>
+
+<Card title="GitHub Actions Docs" icon="github" href="https://docs.github.com/en/actions">
+  GitHub Actions reference
+</Card>
+
+</CardGroup>
+
+## Next Steps
+
+- Read the [contributing guide](/developers/contributing) for PR workflow
+- Check [building C++](/developers/building-cpp) for local development setup
+- Join the [dev mailing list](https://arrow.apache.org/community/) for CI discussions

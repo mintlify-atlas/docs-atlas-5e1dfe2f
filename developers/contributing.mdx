@@ -1,0 +1,140 @@
+---
+title: Contributing to Apache Arrow
+description: Learn how to contribute to Apache Arrow through bug reports, code contributions, and community engagement
+---
+
+Welcome to Apache Arrow! We're excited that you're interested in contributing to the project. Arrow is a large project with many components, and there are many ways to make valuable contributions beyond just writing code.
+
+## Getting Started
+
+Contributing to Apache Arrow doesn't have to be overwhelming. Whether you're fixing a bug, adding a feature, improving documentation, or helping others in the community, your contributions are valuable and appreciated.
+
+### Code of Conduct
+
+All participation in the Apache Arrow project is governed by the [Apache Software Foundation Code of Conduct](https://www.apache.org/foundation/policies/conduct.html). We are committed to providing a welcoming and inclusive environment for all contributors.
+
+## Ways to Contribute
+
+### Join the Community
+
+A great first step is to join the mailing lists and participate in discussions:
+
+- [arrow-dev mailing list](https://mail-archives.apache.org/mod_mbox/arrow-dev/) - For development discussions
+- [Apache Arrow Community](https://arrow.apache.org/community/) - Full community information
+
+### Report Bugs and Request Features
+
+Even if you can't fix issues yourself, reporting bugs and requesting features helps us understand and prioritize improvements.
+
+The Arrow project uses [GitHub issues](https://github.com/apache/arrow/issues) as a bug tracker. Before creating a new issue:
+
+1. Search existing issues to avoid duplicates
+2. Use component prefixes in titles (e.g., "[C++][Python] Issue description")
+3. Provide clear, minimal steps to reproduce bugs
+4. Include relevant system and version information
+
+To be assigned to an issue, simply comment "take" on that issue.
+
+Learn more in our [Bug Reports and Feature Requests](/developers/bug-reports) guide.
+
+### Improve Documentation
+
+Documentation improvements are an excellent way to contribute! If you found incomplete or inaccurate docs, share your knowledge with the community.
+
+Documentation changes are also great for learning our submission process without extensive local development setup. Many doc changes can be made directly in the GitHub web interface.
+
+### Contribute Code
+
+Ready to write code? Here's the workflow:
+
+<Steps>
+  <Step title="Find or Create an Issue">
+    Create a [GitHub issue](https://github.com/apache/arrow/issues) describing the bug or enhancement. Search existing issues first to avoid duplicates.
+    
+    For minor documentation fixes (≤2 files, ≤500 words), you can prefix your PR with "MINOR:" instead of creating an issue.
+  </Step>
+
+  <Step title="Set Up Your Development Environment">
+    - Fork the [apache/arrow repository](https://github.com/apache/arrow)
+    - Clone your fork locally
+    - Set up the build environment for your component
+    - Create a new branch for your work
+    
+    See the [New Contributor's Guide](https://arrow.apache.org/docs/developers/guide/index.html) for detailed setup instructions.
+  </Step>
+
+  <Step title="Make Your Changes">
+    - Write your code following the component's style guide
+    - Add unit tests for your changes
+    - Run tests locally to ensure they pass
+    - Run linters to check code style
+    - Keep your branch synced with upstream/main regularly using `git rebase`
+  </Step>
+
+  <Step title="Submit a Pull Request">
+    - Push your branch to your fork
+    - Create a pull request against the main branch
+    - Prefix the PR title with the issue number and component: "GH-14736: [C++][Python] Description"
+    - Provide a clear, brief description in the PR body
+    - Respond to review feedback and update your PR as needed
+  </Step>
+
+  <Step title="Code Review and Merge">
+    - Core developers will review your PR
+    - Address any requested changes
+    - Once approved and tests pass, a committer will merge your PR using a squash merge
+    - Your contribution will be attributed in the commit message
+  </Step>
+</Steps>
+
+## Development Best Practices
+
+### Git Workflow
+
+- Work off your personal fork, not the main repository
+- Keep your fork's main branch synced with upstream/main
+- Develop on feature branches, not on your main branch
+- Use descriptive branch names (or use the GitHub issue number)
+- Sync your branch with upstream/main regularly using `git rebase`
+- Squash commits locally if you have multiple commits and need to resolve conflicts
+
+### Pull Request Guidelines
+
+- **Break work into small patches** - Smaller changes are easier to review and merge
+- **Add comprehensive tests** - Cover nominal cases, corner cases, and error conditions
+- **Follow style guides** - Each component has its own style conventions
+- **Make code look consistent** - Match existing patterns and conventions in the codebase
+- **Write clear commit messages** - Explain why changes were made, not just what changed
+
+### AI-Generated Code
+
+We recognize that AI coding assistants are part of many developers' workflows. While thoughtful use of AI tools can be beneficial, please:
+
+- Only submit code you can debug and own yourself
+- Review all generated code to understand every detail
+- Match the style and conventions of the existing codebase
+- Be upfront about AI usage and summarize what was AI-generated
+- Watch for AI's tendency toward verbose comments and unnecessary code
+- Disclose any copyrighted materials per [ASF's guidance on AI-generated code](https://www.apache.org/legal/generative-tooling.html)
+
+PRs that appear to be fully AI-generated with little human engagement may be closed without review.
+
+## Proposing Major Changes
+
+For significant new features or important refactoring, please discuss your proposal on the [arrow-dev mailing list](https://mail-archives.apache.org/mod_mbox/arrow-dev/) before starting work. This helps ensure your effort aligns with the project's direction and prevents duplicated work.
+
+## Questions?
+
+If you have questions about:
+- **Source code** - Ask on the [arrow-dev mailing list](https://mail-archives.apache.org/mod_mbox/arrow-dev/)
+- **Build procedures** - Check the [development documentation](https://arrow.apache.org/docs/developers/index.html)
+- **Getting started** - Read the [New Contributor's Guide](https://arrow.apache.org/docs/developers/guide/index.html)
+
+## Additional Resources
+
+- [Development Documentation](https://arrow.apache.org/docs/developers/index.html)
+- [New Contributor's Guide](https://arrow.apache.org/docs/developers/guide/index.html)
+- [Continuous Integration](/developers/continuous-integration)
+- [Code Review Process](/developers/code-review)
+
+Thank you for contributing to Apache Arrow! Your efforts help make Arrow better for everyone.

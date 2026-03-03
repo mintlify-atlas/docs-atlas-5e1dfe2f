@@ -1,0 +1,382 @@
+---
+title: Reading and Writing Data
+description: Learn how to read and write data in various formats using Apache Arrow
+---
+
+Apache Arrow provides efficient I/O interfaces for reading and writing data in multiple formats including Parquet, CSV, IPC (Arrow format), and Feather.
+
+## Reading and Writing Parquet Files
+
+Parquet is a columnar storage format that provides efficient compression and encoding schemes.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    # Create sample data
+    table = pa.table({
+        'id': [1, 2, 3, 4],
+        'name': ['Alice', 'Bob', 'Charlie', 'David'],
+        'score': [95.5, 87.2, 92.8, 78.9]
+    })
+
+    # Write to Parquet file
+    pq.write_table(table, 'data.parquet')
+
+    # Read from Parquet file
+    table = pq.read_table('data.parquet')
+    print(table)
+
+    # Read with column selection
+    table = pq.read_table('data.parquet', columns=['name', 'score'])
+
+    # Read with filtering (requires pyarrow.dataset)
+    import pyarrow.dataset as ds
+    dataset = ds.dataset('data.parquet', format='parquet')
+    filtered = dataset.to_table(filter=ds.field('score') > 85)
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/io/file.h>
+    #include <parquet/arrow/reader.h>
+    #include <parquet/arrow/writer.h>
+
+    // Write Parquet file
+    arrow::Status WriteParquet(const std::shared_ptr<arrow::Table>& table,
+                               const std::string& path) {
+      std::shared_ptr<arrow::io::FileOutputStream> outfile;
+      ARROW_ASSIGN_OR_RAISE(outfile, 
+        arrow::io::FileOutputStream::Open(path));
+      
+      ARROW_RETURN_NOT_OK(
+        parquet::arrow::WriteTable(*table, arrow::default_memory_pool(),
+                                   outfile, /*chunk_size=*/1024));
+      return arrow::Status::OK();
+    }
+
+    // Read Parquet file
+    arrow::Result<std::shared_ptr<arrow::Table>> ReadParquet(
+        const std::string& path) {
+      std::shared_ptr<arrow::io::ReadableFile> infile;
+      ARROW_ASSIGN_OR_RAISE(infile, 
+        arrow::io::ReadableFile::Open(path, arrow::default_memory_pool()));
+
+      std::unique_ptr<parquet::arrow::FileReader> reader;
+      ARROW_RETURN_NOT_OK(
+        parquet::arrow::OpenFile(infile, arrow::default_memory_pool(), &reader));
+
+      std::shared_ptr<arrow::Table> table;
+      ARROW_RETURN_NOT_OK(reader->ReadTable(&table));
+      return table;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## IPC Format (Arrow Native Format)
+
+The Arrow IPC format provides zero-copy reads and is optimized for inter-process communication.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import pyarrow.ipc as ipc
+
+    # Create sample data
+    schema = pa.schema([
+        ('id', pa.int32()),
+        ('value', pa.float64())
+    ])
+    
+    batch = pa.record_batch([
+        [1, 2, 3, 4],
+        [1.5, 2.5, 3.5, 4.5]
+    ], schema=schema)
+
+    # Write to IPC file (also called Feather V2)
+    with pa.OSFile('data.arrow', 'wb') as sink:
+        with ipc.new_file(sink, schema) as writer:
+            writer.write_batch(batch)
+
+    # Read from IPC file
+    with pa.memory_map('data.arrow', 'rb') as source:
+        reader = ipc.open_file(source)
+        table = reader.read_all()
+        print(f"Read {reader.num_record_batches} batches")
+
+    # Stream format (no random access)
+    with pa.OSFile('data.arrows', 'wb') as sink:
+        with ipc.new_stream(sink, schema) as writer:
+            writer.write_batch(batch)
+            writer.write_batch(batch)  # Can write multiple batches
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/io/file.h>
+    #include <arrow/ipc/reader.h>
+    #include <arrow/ipc/writer.h>
+
+    // Write IPC file
+    arrow::Status WriteIPC(const std::shared_ptr<arrow::RecordBatch>& batch,
+                           const std::string& path) {
+      ARROW_ASSIGN_OR_RAISE(auto outfile,
+        arrow::io::FileOutputStream::Open(path));
+      
+      ARROW_ASSIGN_OR_RAISE(auto writer,
+        arrow::ipc::MakeFileWriter(outfile, batch->schema()));
+      
+      ARROW_RETURN_NOT_OK(writer->WriteRecordBatch(*batch));
+      ARROW_RETURN_NOT_OK(writer->Close());
+      return arrow::Status::OK();
+    }
+
+    // Read IPC file
+    arrow::Result<std::shared_ptr<arrow::Table>> ReadIPC(
+        const std::string& path) {
+      ARROW_ASSIGN_OR_RAISE(auto infile,
+        arrow::io::ReadableFile::Open(path));
+      
+      ARROW_ASSIGN_OR_RAISE(auto reader,
+        arrow::ipc::RecordBatchFileReader::Open(infile));
+      
+      std::shared_ptr<arrow::Table> table;
+      ARROW_RETURN_NOT_OK(reader->ReadAll(&table));
+      return table;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+The IPC file format supports random access, while the stream format is designed for sequential reading. Use files when you need to access specific batches, and streams when processing data sequentially.
+</Note>
+
+## Reading CSV Files
+
+Arrow provides high-performance CSV reading with type inference and streaming capabilities.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow.csv as csv
+    import pyarrow as pa
+
+    # Read entire CSV into a table
+    table = csv.read_csv('data.csv')
+
+    # Read with custom options
+    parse_options = csv.ParseOptions(
+        delimiter='|',
+        quote_char='"',
+        escape_char='\\'
+    )
+    
+    convert_options = csv.ConvertOptions(
+        column_types={
+            'id': pa.int64(),
+            'timestamp': pa.timestamp('s')
+        },
+        strings_can_be_null=True
+    )
+    
+    read_options = csv.ReadOptions(
+        skip_rows=1,
+        column_names=['id', 'name', 'timestamp', 'value']
+    )
+
+    table = csv.read_csv('data.csv',
+                        parse_options=parse_options,
+                        convert_options=convert_options,
+                        read_options=read_options)
+
+    # Stream large CSV files
+    with csv.open_csv('large_file.csv') as reader:
+        for batch in reader:
+            # Process each batch
+            print(f"Batch with {batch.num_rows} rows")
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/csv/api.h>
+    #include <arrow/io/file.h>
+
+    arrow::Result<std::shared_ptr<arrow::Table>> ReadCSV(
+        const std::string& path) {
+      // Open input stream
+      ARROW_ASSIGN_OR_RAISE(auto input,
+        arrow::io::ReadableFile::Open(path));
+
+      // Configure CSV reader
+      auto read_options = arrow::csv::ReadOptions::Defaults();
+      auto parse_options = arrow::csv::ParseOptions::Defaults();
+      auto convert_options = arrow::csv::ConvertOptions::Defaults();
+
+      // Create CSV reader
+      ARROW_ASSIGN_OR_RAISE(auto reader,
+        arrow::csv::TableReader::Make(
+          arrow::io::default_io_context(),
+          input,
+          read_options,
+          parse_options,
+          convert_options));
+
+      // Read entire table
+      return reader->Read();
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Memory-Mapped Files
+
+Memory-mapped files provide efficient access to large files without loading them entirely into memory.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import pyarrow.ipc as ipc
+
+    # Memory-map an Arrow IPC file
+    with pa.memory_map('large_data.arrow', 'rb') as source:
+        # Zero-copy read - data stays on disk
+        reader = ipc.open_file(source)
+        
+        # Access specific batches without loading everything
+        batch_0 = reader.get_batch(0)
+        batch_5 = reader.get_batch(5)
+        
+        # Or read all if needed
+        table = reader.read_all()
+
+    # Create a memory-mapped file for writing
+    with pa.memory_map('output.arrow', 'wb') as sink:
+        with ipc.new_file(sink, schema) as writer:
+            writer.write_table(table)
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/io/memory.h>
+
+    arrow::Result<std::shared_ptr<arrow::io::MemoryMappedFile>> 
+    OpenMemoryMapped(const std::string& path) {
+      // Open for reading
+      ARROW_ASSIGN_OR_RAISE(auto mmap,
+        arrow::io::MemoryMappedFile::Open(path, arrow::io::FileMode::READ));
+      
+      return mmap;
+    }
+
+    arrow::Result<std::shared_ptr<arrow::io::MemoryMappedFile>> 
+    CreateMemoryMapped(const std::string& path, int64_t size) {
+      // Create for writing
+      ARROW_ASSIGN_OR_RAISE(auto mmap,
+        arrow::io::MemoryMappedFile::Create(path, size));
+      
+      return mmap;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+Memory-mapped files on Windows have limitations with file sizes larger than available address space on 32-bit systems. Use 64-bit systems for large files.
+</Warning>
+
+## Buffered I/O
+
+For better performance with many small reads or writes, use buffered streams.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+
+    # Buffered output stream
+    with pa.OSFile('data.bin', 'wb') as raw_sink:
+        # Wrap in buffered stream
+        buffered = pa.BufferOutputStream(raw_sink)
+        
+        # Multiple small writes are buffered
+        for i in range(1000):
+            buffered.write(bytes([i % 256]))
+        
+        # Flush to ensure all data is written
+        buffered.flush()
+
+    # Buffered input stream
+    with pa.OSFile('data.bin', 'rb') as raw_source:
+        buffered = pa.BufferReader(raw_source.read())
+        
+        # Efficient random access
+        buffered.seek(100)
+        data = buffered.read(50)
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/io/buffered.h>
+    #include <arrow/io/file.h>
+
+    // Create buffered input stream
+    arrow::Result<std::shared_ptr<arrow::io::BufferedInputStream>>
+    CreateBufferedInput(const std::string& path) {
+      ARROW_ASSIGN_OR_RAISE(auto file,
+        arrow::io::ReadableFile::Open(path));
+      
+      // Wrap in buffered stream with 1MB buffer
+      return arrow::io::BufferedInputStream::Create(
+        1024 * 1024,  // buffer size
+        arrow::default_memory_pool(),
+        file);
+    }
+
+    // Create buffered output stream
+    arrow::Result<std::shared_ptr<arrow::io::BufferedOutputStream>>
+    CreateBufferedOutput(const std::string& path) {
+      ARROW_ASSIGN_OR_RAISE(auto file,
+        arrow::io::FileOutputStream::Open(path));
+      
+      // Wrap in buffered stream
+      return arrow::io::BufferedOutputStream::Create(
+        1024 * 1024,  // buffer size
+        arrow::default_memory_pool(),
+        file);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+1. **Choose the right format**: Use Parquet for long-term storage and analytics, IPC for inter-process communication, and CSV for compatibility.
+
+2. **Use compression**: Enable compression for Parquet files to reduce storage size:
+   ```python
+   pq.write_table(table, 'data.parquet', compression='snappy')
+   ```
+
+3. **Stream large files**: For files that don't fit in memory, use streaming readers:
+   ```python
+   with csv.open_csv('huge_file.csv') as reader:
+       for batch in reader:
+           process(batch)  # Process in chunks
+   ```
+
+4. **Use column selection**: Only read columns you need to reduce I/O:
+   ```python
+   table = pq.read_table('data.parquet', columns=['col1', 'col2'])
+   ```
+
+5. **Memory-map when appropriate**: Use memory-mapped files for read-heavy workloads on local storage.

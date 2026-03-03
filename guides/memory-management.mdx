@@ -1,0 +1,389 @@
+---
+title: Memory Management
+description: Understanding Arrow's memory management, allocation, and buffer handling
+---
+
+Apache Arrow provides sophisticated memory management capabilities to ensure efficient use of system resources and enable zero-copy data sharing.
+
+## Memory Pools
+
+Memory pools manage allocation and deallocation of memory buffers in Arrow. All allocations go through a memory pool, which allows tracking and controlling memory usage.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+
+    # Get the default memory pool
+    pool = pa.default_memory_pool()
+    print(f"Backend: {pool.backend_name}")
+    print(f"Bytes allocated: {pool.bytes_allocated()}")
+    print(f"Max memory: {pool.max_memory()}")
+
+    # Create a custom memory pool with tracking
+    # Available backends: 'system', 'jemalloc', 'mimalloc'
+    if 'jemalloc' in pa.supported_memory_backends():
+        pool = pa.jemalloc_memory_pool()
+    else:
+        pool = pa.system_memory_pool()
+
+    # Allocate a buffer with a specific pool
+    buf = pa.allocate_buffer(1024 * 1024, memory_pool=pool)  # 1 MB
+    print(f"Allocated: {pool.bytes_allocated()} bytes")
+
+    # Check available backends
+    print("Supported backends:", pa.supported_memory_backends())
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/memory_pool.h>
+    #include <arrow/buffer.h>
+
+    void MemoryPoolExample() {
+      // Get default memory pool
+      arrow::MemoryPool* pool = arrow::default_memory_pool();
+      
+      std::cout << "Bytes allocated: " 
+                << pool->bytes_allocated() << std::endl;
+      std::cout << "Max memory: " 
+                << pool->max_memory() << std::endl;
+
+      // Allocate memory
+      uint8_t* buffer = nullptr;
+      int64_t size = 1024 * 1024;  // 1 MB
+      arrow::Status status = pool->Allocate(size, &buffer);
+      
+      if (status.ok()) {
+        std::cout << "Allocated " << size << " bytes" << std::endl;
+        
+        // Use the buffer...
+        
+        // Free the memory
+        pool->Free(buffer, size);
+      }
+    }
+
+    // Create a system memory pool
+    std::unique_ptr<arrow::MemoryPool> CreateSystemPool() {
+      return arrow::MemoryPool::CreateDefault();
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+Always allocate buffers with alignment to 64 bytes for optimal SIMD performance. Arrow's memory pools handle this automatically.
+</Warning>
+
+## Buffers
+
+Buffers are the fundamental memory container in Arrow, representing contiguous memory regions.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import numpy as np
+
+    # Create a buffer from Python bytes
+    data = b"Hello, Arrow!"
+    buf = pa.py_buffer(data)
+    print(f"Buffer size: {buf.size} bytes")
+    print(f"Is mutable: {buf.is_mutable}")
+
+    # Create from NumPy array (zero-copy)
+    arr = np.array([1, 2, 3, 4, 5], dtype=np.int32)
+    buf = pa.py_buffer(arr)
+    print(f"Buffer size: {buf.size} bytes")
+
+    # Allocate a new buffer
+    buf = pa.allocate_buffer(1024)  # 1 KB
+    print(f"Allocated {buf.size} bytes")
+
+    # Create a resizable buffer
+    buf = pa.BufferOutputStream()
+    buf.write(b"data")
+    buf.write(b" more data")
+    result = buf.getvalue()  # Get the final buffer
+    print(f"Buffer contents: {result.to_pybytes()}")
+
+    # Slice a buffer (zero-copy)
+    original = pa.py_buffer(b"0123456789")
+    sliced = original.slice(2, 5)  # offset=2, length=5
+    print(f"Sliced: {sliced.to_pybytes()}")  # b"23456"
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/buffer.h>
+    #include <arrow/memory_pool.h>
+
+    void BufferExample() {
+      // Create immutable buffer from string
+      std::string data = "Hello, Arrow!";
+      auto buf = arrow::Buffer::FromString(data);
+      std::cout << "Size: " << buf->size() << std::endl;
+      std::cout << "Is mutable: " << buf->is_mutable() << std::endl;
+
+      // Allocate a mutable buffer
+      int64_t size = 1024;
+      arrow::Result<std::unique_ptr<arrow::Buffer>> result =
+          arrow::AllocateBuffer(size, arrow::default_memory_pool());
+      
+      if (result.ok()) {
+        std::unique_ptr<arrow::Buffer> buffer = std::move(result).ValueOrDie();
+        
+        // Get mutable data pointer
+        uint8_t* mutable_data = buffer->mutable_data();
+        
+        // Write data
+        std::memcpy(mutable_data, "data", 4);
+      }
+
+      // Slice a buffer (zero-copy view)
+      auto parent = arrow::Buffer::FromString("0123456789");
+      auto sliced = arrow::SliceBuffer(parent, 2, 5);  // offset, length
+      // sliced contains "23456"
+
+      // Create buffer from existing memory (non-owning)
+      uint8_t existing_data[100];
+      auto view = std::make_shared<arrow::Buffer>(
+        existing_data, sizeof(existing_data));
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+Buffer slicing in Arrow is a zero-copy operation. The sliced buffer maintains a reference to the parent buffer, ensuring the underlying memory remains valid.
+</Note>
+
+## Zero-Copy Buffer Sharing
+
+One of Arrow's key features is the ability to share buffers between processes and language runtimes without copying data.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import numpy as np
+
+    # NumPy to Arrow (zero-copy when possible)
+    np_array = np.array([1, 2, 3, 4, 5], dtype=np.int64)
+    arrow_array = pa.array(np_array)
+    # No data copy - Arrow wraps the NumPy buffer
+
+    # Arrow to NumPy (zero-copy)
+    arrow_array = pa.array([1, 2, 3, 4, 5])
+    np_view = arrow_array.to_numpy(zero_copy_only=True)
+    # Raises error if zero-copy is not possible
+
+    # Pandas to Arrow
+    import pandas as pd
+    df = pd.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
+    table = pa.Table.from_pandas(df, preserve_index=False)
+
+    # Arrow to Pandas (zero-copy for some types)
+    df_back = table.to_pandas(zero_copy_only=False, 
+                             self_destruct=True)
+    # self_destruct transfers ownership when possible
+
+    # Share via IPC (zero-copy in same process)
+    import pyarrow.plasma as plasma  # If available
+    # Or use shared memory for inter-process zero-copy
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/buffer.h>
+
+    // Share buffer with another Array (zero-copy)
+    std::shared_ptr<arrow::Array> ShareBuffer(
+        const std::shared_ptr<arrow::Array>& source) {
+      // Get the underlying buffer
+      auto data = source->data();
+      
+      // Create new array with same buffer
+      // Both arrays point to the same memory
+      auto new_data = arrow::ArrayData::Make(
+        source->type(),
+        source->length(),
+        {data->buffers[0], data->buffers[1]},  // Share buffers
+        source->null_count(),
+        0  // offset
+      );
+      
+      return arrow::MakeArray(new_data);
+    }
+
+    // Slice array (zero-copy)
+    std::shared_ptr<arrow::Array> SliceArray(
+        const std::shared_ptr<arrow::Array>& array,
+        int64_t offset, int64_t length) {
+      // Creates a view without copying data
+      return array->Slice(offset, length);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Memory Management Best Practices
+
+### 1. Reuse Buffers
+
+Reusing buffers reduces allocation overhead:
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+
+    # Reusable buffer for building arrays
+    builder = pa.Int64Builder()
+    
+    for chunk in data_chunks:
+        builder.reset()  # Clear without deallocating
+        for value in chunk:
+            builder.append(value)
+        array = builder.finish()
+        process(array)
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/array/builder_primitive.h>
+
+    void ReuseBuilder() {
+      arrow::Int64Builder builder;
+      
+      for (const auto& chunk : data_chunks) {
+        // Reset reuses internal buffers
+        builder.Reset();
+        
+        for (int64_t value : chunk) {
+          ARROW_CHECK_OK(builder.Append(value));
+        }
+        
+        std::shared_ptr<arrow::Array> array;
+        ARROW_CHECK_OK(builder.Finish(&array));
+        
+        ProcessArray(array);
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### 2. Monitor Memory Usage
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+
+    pool = pa.default_memory_pool()
+    
+    # Check before operation
+    before = pool.bytes_allocated()
+    
+    # Perform memory-intensive operation
+    large_array = pa.array(range(10_000_000))
+    
+    # Check after
+    after = pool.bytes_allocated()
+    print(f"Operation used {after - before} bytes")
+    print(f"Peak memory: {pool.max_memory()} bytes")
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/memory_pool.h>
+
+    void MonitorMemory() {
+      auto* pool = arrow::default_memory_pool();
+      
+      int64_t before = pool->bytes_allocated();
+      
+      // Memory-intensive operation
+      PerformOperation();
+      
+      int64_t after = pool->bytes_allocated();
+      std::cout << "Used: " << (after - before) << " bytes" << std::endl;
+      std::cout << "Peak: " << pool->max_memory() << " bytes" << std::endl;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### 3. Avoid Unnecessary Copies
+
+<Warning>
+Be careful with operations that might copy data:
+- Converting between incompatible types
+- Modifying immutable arrays (creates new array)
+- Concatenating many small arrays (prefer builders)
+</Warning>
+
+```python
+# Bad: Creates many intermediate copies
+result = pa.concat_arrays([pa.array([i]) for i in range(1000)])
+
+# Good: Build once
+builder = pa.Int64Builder()
+for i in range(1000):
+    builder.append(i)
+result = builder.finish()
+```
+
+### 4. Use Appropriate Pool for Use Case
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+
+    # For long-running applications, jemalloc can be more efficient
+    if 'jemalloc' in pa.supported_memory_backends():
+        pa.set_memory_pool(pa.jemalloc_memory_pool())
+
+    # For debugging memory issues
+    pool = pa.logging_memory_pool(pa.default_memory_pool())
+    pa.set_memory_pool(pool)
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    // System allocator (default)
+    auto system_pool = arrow::system_memory_pool();
+
+    // For debugging
+    auto logging_pool = arrow::LoggingMemoryPool::Make(
+      arrow::default_memory_pool(),
+      arrow::LoggingMemoryPool::LogType::REALTIME
+    );
+    ```
+  </Tab>
+</Tabs>
+
+### 5. Handle Large Datasets
+
+For datasets larger than available memory:
+
+```python
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+# Process in batches
+with pq.ParquetFile('large_file.parquet') as pf:
+    for batch in pf.iter_batches(batch_size=10000):
+        # Process batch
+        result = process(batch)
+        # Batch is freed after this iteration
+        del batch
+```
+
+<Note>
+Arrow uses reference counting for memory management. Buffers are automatically freed when no more references exist. In Python, this integrates with Python's garbage collector.
+</Note>

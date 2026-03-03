@@ -1,0 +1,100 @@
+---
+title: Installation Overview
+description: Get started with Apache Arrow by choosing the right installation method for your language and platform
+---
+
+Apache Arrow provides official libraries for multiple programming languages. This guide will help you install Arrow for your preferred language and platform.
+
+## Supported Languages
+
+Apache Arrow offers native support for:
+
+- **C++** - High-performance core library
+- **Python** - PyArrow for data science and analytics
+- **R** - Integration with tidyverse and dplyr
+- **Ruby** - Red Arrow bindings for Ruby applications
+
+And many more languages including Java, Go, Rust, JavaScript, C#, and MATLAB.
+
+## Quick Installation
+
+Choose your language to get started:
+
+<CardGroup cols={2}>
+  <Card title="C++" icon="code" href="/getting-started/install-cpp">
+    Install the Arrow C++ library for high-performance data processing
+  </Card>
+  <Card title="Python" icon="python" href="/getting-started/install-python">
+    Install PyArrow for Python data science workflows
+  </Card>
+  <Card title="R" icon="chart-line" href="/getting-started/install-r">
+    Install the arrow package for R analytics
+  </Card>
+  <Card title="Ruby" icon="gem" href="/getting-started/install-ruby">
+    Install Red Arrow for Ruby applications
+  </Card>
+</CardGroup>
+
+## Installation Methods
+
+Depending on your language and platform, you can install Apache Arrow using:
+
+### Package Managers
+
+The easiest way to install Arrow is through your platform's package manager:
+
+- **Python**: pip or conda
+- **R**: CRAN, R-universe, or conda
+- **Ruby**: RubyGems
+- **System packages**: apt (Ubuntu/Debian), yum/dnf (RHEL/CentOS/Fedora), brew (macOS)
+
+### Pre-compiled Binaries
+
+Official pre-compiled binaries are available for:
+- Windows
+- macOS (Intel and Apple Silicon)
+- Linux (major distributions)
+
+<Note>
+For the latest pre-compiled binary packages, visit the [official Apache Arrow installation page](https://arrow.apache.org/install/).
+</Note>
+
+### Building from Source
+
+For advanced users who need:
+- Latest development features
+- Custom build configurations
+- Specific compiler optimizations
+
+Refer to the [C++ Development Documentation](https://arrow.apache.org/docs/dev/developers/cpp/) for detailed build instructions.
+
+## Platform Support
+
+Apache Arrow supports:
+
+- **Linux**: Ubuntu, Debian, RHEL, CentOS, Fedora, Amazon Linux
+- **macOS**: Intel (x86_64) and Apple Silicon (ARM64)
+- **Windows**: Windows 10 and later
+
+<Warning>
+On macOS with Apple Silicon, ensure you're using R compiled for ARM64. Using Intel-compiled R on ARM Macs may result in segfaults and crashes.
+</Warning>
+
+## Version Requirements
+
+<Note>
+As of Arrow 23.0.0, the C++ library requires C++20 to build. This affects:
+- **Windows**: Requires R 4.3 or later
+- **CentOS 7**: May require updated compilers
+</Note>
+
+## Next Steps
+
+After installation, you can:
+
+1. Read and write data in various formats (Parquet, CSV, JSON)
+2. Work with larger-than-memory datasets
+3. Integrate with cloud storage (S3, GCS)
+4. Perform zero-copy data sharing between languages
+
+Choose your language from the cards above to begin installation.

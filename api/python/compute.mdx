@@ -1,0 +1,700 @@
+---
+title: Compute Functions
+description: Apache Arrow compute functions for data transformations and analytics
+---
+
+## Overview
+
+The compute module provides functions for performing computations on Arrow data structures. These functions support both scalar operations and aggregations.
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+arr = pa.array([1, 2, 3, 4, 5])
+result = pc.sum(arr)
+print(result)  # 15
+```
+
+## Arithmetic Functions
+
+### add()
+
+Add two arrays or scalars element-wise.
+
+```python
+pc.add(x, y, memory_pool=None)
+```
+
+<ParamField path="x" type="Array-like or scalar-like">
+  First argument.
+</ParamField>
+
+<ParamField path="y" type="Array-like or scalar-like">
+  Second argument.
+</ParamField>
+
+<ParamField path="memory_pool" type="pyarrow.MemoryPool" default="None">
+  Memory pool for allocation.
+</ParamField>
+
+<ResponseField name="result" type="Array or Scalar">
+  Element-wise sum of x and y.
+</ResponseField>
+
+### subtract()
+
+Subtract two arrays or scalars element-wise.
+
+```python
+pc.subtract(x, y, memory_pool=None)
+```
+
+### multiply()
+
+Multiply two arrays or scalars element-wise.
+
+```python
+pc.multiply(x, y, memory_pool=None)
+```
+
+### divide()
+
+Divide two arrays or scalars element-wise.
+
+```python
+pc.divide(x, y, memory_pool=None)
+```
+
+### power()
+
+Raise to power element-wise.
+
+```python
+pc.power(base, exponent, memory_pool=None)
+```
+
+<ParamField path="base" type="Array-like or scalar-like">
+  Base value.
+</ParamField>
+
+<ParamField path="exponent" type="Array-like or scalar-like">
+  Exponent value.
+</ParamField>
+
+<ResponseField name="result" type="Array or Scalar">
+  Element-wise power computation.
+</ResponseField>
+
+### negate()
+
+Negate values element-wise.
+
+```python
+arr = pa.array([1, -2, 3])
+result = pc.negate(arr)
+print(result)  # [-1, 2, -3]
+```
+
+### abs()
+
+Compute absolute value element-wise.
+
+```python
+arr = pa.array([-1, -2, 3])
+result = pc.abs(arr)
+print(result)  # [1, 2, 3]
+```
+
+## Aggregation Functions
+
+### sum()
+
+Compute sum of array values.
+
+```python
+pc.sum(array, skip_nulls=True, min_count=1, memory_pool=None)
+```
+
+<ParamField path="array" type="Array-like">
+  Array to aggregate.
+</ParamField>
+
+<ParamField path="skip_nulls" type="bool" default="True">
+  Whether to skip null values.
+</ParamField>
+
+<ParamField path="min_count" type="int" default="1">
+  Minimum number of non-null values required.
+</ParamField>
+
+<ResponseField name="result" type="Scalar">
+  Sum of array values.
+</ResponseField>
+
+### mean()
+
+Compute arithmetic mean.
+
+```python
+arr = pa.array([1, 2, 3, 4, 5])
+result = pc.mean(arr)
+print(result)  # 3.0
+```
+
+### min()
+
+Find minimum value.
+
+```python
+pc.min(array, skip_nulls=True, min_count=1, memory_pool=None)
+```
+
+### max()
+
+Find maximum value.
+
+```python
+pc.max(array, skip_nulls=True, min_count=1, memory_pool=None)
+```
+
+### count()
+
+Count non-null values.
+
+```python
+pc.count(array, mode='only_valid', memory_pool=None)
+```
+
+<ParamField path="array" type="Array-like">
+  Array to count.
+</ParamField>
+
+<ParamField path="mode" type="str" default="'only_valid'">
+  Count mode: 'only_valid', 'only_null', or 'all'.
+</ParamField>
+
+<ResponseField name="result" type="Scalar">
+  Count of values.
+</ResponseField>
+
+### variance()
+
+Compute variance.
+
+```python
+pc.variance(array, ddof=0, skip_nulls=True, min_count=0, memory_pool=None)
+```
+
+<ParamField path="array" type="Array-like">
+  Array to compute variance for.
+</ParamField>
+
+<ParamField path="ddof" type="int" default="0">
+  Delta degrees of freedom (0 for population variance, 1 for sample variance).
+</ParamField>
+
+<ResponseField name="result" type="Scalar">
+  Variance of array values.
+</ResponseField>
+
+### stddev()
+
+Compute standard deviation.
+
+```python
+pc.stddev(array, ddof=0, skip_nulls=True, min_count=0, memory_pool=None)
+```
+
+## String Functions
+
+### string_length()
+
+Compute string length.
+
+```python
+arr = pa.array(['hello', 'world', 'arrow'])
+result = pc.utf8_length(arr)
+print(result)  # [5, 5, 5]
+```
+
+### upper()
+
+Convert strings to uppercase.
+
+```python
+arr = pa.array(['hello', 'world'])
+result = pc.utf8_upper(arr)
+print(result)  # ['HELLO', 'WORLD']
+```
+
+### lower()
+
+Convert strings to lowercase.
+
+```python
+arr = pa.array(['HELLO', 'WORLD'])
+result = pc.utf8_lower(arr)
+print(result)  # ['hello', 'world']
+```
+
+### match_substring()
+
+Match substring in strings.
+
+```python
+pc.match_substring(strings, pattern, ignore_case=False, memory_pool=None)
+```
+
+<ParamField path="strings" type="Array-like">
+  String array to search in.
+</ParamField>
+
+<ParamField path="pattern" type="str">
+  Substring pattern to match.
+</ParamField>
+
+<ParamField path="ignore_case" type="bool" default="False">
+  Whether to ignore case.
+</ParamField>
+
+<ResponseField name="result" type="BooleanArray">
+  Boolean array indicating matches.
+</ResponseField>
+
+### replace_substring()
+
+Replace substring occurrences.
+
+```python
+pc.replace_substring(strings, pattern, replacement, max_replacements=None, memory_pool=None)
+```
+
+<ParamField path="strings" type="Array-like">
+  String array.
+</ParamField>
+
+<ParamField path="pattern" type="str">
+  Substring to replace.
+</ParamField>
+
+<ParamField path="replacement" type="str">
+  Replacement string.
+</ParamField>
+
+<ParamField path="max_replacements" type="int" default="None">
+  Maximum number of replacements per string.
+</ParamField>
+
+<ResponseField name="result" type="StringArray">
+  Array with replacements made.
+</ResponseField>
+
+## Filter and Selection
+
+### filter()
+
+Filter values based on a boolean mask.
+
+```python
+pc.filter(data, mask, null_selection_behavior='drop', memory_pool=None)
+```
+
+<ParamField path="data" type="Array, ChunkedArray, RecordBatch, or Table">
+  Data to filter.
+</ParamField>
+
+<ParamField path="mask" type="Array or Expression">
+  Boolean mask for filtering.
+</ParamField>
+
+<ParamField path="null_selection_behavior" type="str" default="'drop'">
+  How to handle nulls in mask: 'drop' or 'emit_null'.
+</ParamField>
+
+<ResponseField name="result" type="Same as input type">
+  Filtered data.
+</ResponseField>
+
+### take()
+
+Select values by indices.
+
+```python
+pc.take(data, indices, boundscheck=True, memory_pool=None)
+```
+
+<ParamField path="data" type="Array, ChunkedArray, RecordBatch, or Table">
+  Data to select from.
+</ParamField>
+
+<ParamField path="indices" type="Array, ChunkedArray">
+  Integer indices to select. Must be integer type.
+</ParamField>
+
+<ParamField path="boundscheck" type="bool" default="True">
+  Whether to check indices are in bounds.
+</ParamField>
+
+<ResponseField name="result" type="Same as input type">
+  Selected values.
+</ResponseField>
+
+### index()
+
+Find index of first occurrence of a value.
+
+```python
+pc.index(data, value, start=None, end=None, memory_pool=None)
+```
+
+<ParamField path="data" type="Array-like">
+  Array to search in.
+</ParamField>
+
+<ParamField path="value" type="Scalar-like">
+  Value to search for.
+</ParamField>
+
+<ParamField path="start" type="int" default="None">
+  Start index for search.
+</ParamField>
+
+<ParamField path="end" type="int" default="None">
+  End index for search.
+</ParamField>
+
+<ResponseField name="index" type="int">
+  Index of first occurrence, or -1 if not found.
+</ResponseField>
+
+## Sorting and Ranking
+
+### sort_indices()
+
+Return indices that would sort an array.
+
+```python
+pc.sort_indices(array, order='ascending', null_placement='at_end', memory_pool=None)
+```
+
+<ParamField path="array" type="Array-like">
+  Array to get sort indices for.
+</ParamField>
+
+<ParamField path="order" type="str" default="'ascending'">
+  Sort order: 'ascending' or 'descending'.
+</ParamField>
+
+<ParamField path="null_placement" type="str" default="'at_end'">
+  Where to place nulls: 'at_start' or 'at_end'.
+</ParamField>
+
+<ResponseField name="indices" type="UInt64Array">
+  Indices that would sort the array.
+</ResponseField>
+
+### top_k_unstable()
+
+Select indices of top k elements.
+
+```python
+pc.top_k_unstable(values, k, sort_keys=None, memory_pool=None)
+```
+
+<ParamField path="values" type="Array, ChunkedArray, RecordBatch, or Table">
+  Data to sort and get top indices from.
+</ParamField>
+
+<ParamField path="k" type="int">
+  Number of top elements to select.
+</ParamField>
+
+<ParamField path="sort_keys" type="list" default="None">
+  Column key names to order by (for table-like data).
+</ParamField>
+
+<ResponseField name="indices" type="UInt64Array">
+  Indices of top k elements.
+</ResponseField>
+
+### bottom_k_unstable()
+
+Select indices of bottom k elements.
+
+```python
+pc.bottom_k_unstable(values, k, sort_keys=None, memory_pool=None)
+```
+
+## Type Conversions
+
+### cast()
+
+Cast array values to another data type.
+
+```python
+pc.cast(arr, target_type=None, safe=True, options=None, memory_pool=None)
+```
+
+<ParamField path="arr" type="Array-like">
+  Array to cast.
+</ParamField>
+
+<ParamField path="target_type" type="DataType or str">
+  Type to cast to.
+</ParamField>
+
+<ParamField path="safe" type="bool" default="True">
+  Check for overflows or unsafe conversions.
+</ParamField>
+
+<ParamField path="options" type="CastOptions" default="None">
+  Additional casting options.
+</ParamField>
+
+<ResponseField name="result" type="Array">
+  Array with values cast to target type.
+</ResponseField>
+
+## Null Handling
+
+### is_null()
+
+Check which values are null.
+
+```python
+arr = pa.array([1, None, 3])
+result = pc.is_null(arr)
+print(result)  # [False, True, False]
+```
+
+<ResponseField name="result" type="BooleanArray">
+  Boolean array indicating null values.
+</ResponseField>
+
+### is_valid()
+
+Check which values are not null.
+
+```python
+arr = pa.array([1, None, 3])
+result = pc.is_valid(arr)
+print(result)  # [True, False, True]
+```
+
+### fill_null()
+
+Replace null values.
+
+```python
+pc.fill_null(values, fill_value)
+```
+
+<ParamField path="values" type="Array, ChunkedArray, or Scalar-like">
+  Values to fill nulls in.
+</ParamField>
+
+<ParamField path="fill_value" type="Array, ChunkedArray, or Scalar-like">
+  Value to replace nulls with.
+</ParamField>
+
+<ResponseField name="result" type="Same as input type">
+  Array with nulls replaced.
+</ResponseField>
+
+## Comparison Functions
+
+### equal()
+
+Element-wise equality.
+
+```python
+pc.equal(x, y, memory_pool=None)
+```
+
+<ResponseField name="result" type="BooleanArray">
+  Boolean array of equality results.
+</ResponseField>
+
+### not_equal()
+
+Element-wise inequality.
+
+```python
+pc.not_equal(x, y, memory_pool=None)
+```
+
+### greater()
+
+Element-wise greater than.
+
+```python
+pc.greater(x, y, memory_pool=None)
+```
+
+### greater_equal()
+
+Element-wise greater than or equal.
+
+```python
+pc.greater_equal(x, y, memory_pool=None)
+```
+
+### less()
+
+Element-wise less than.
+
+```python
+pc.less(x, y, memory_pool=None)
+```
+
+### less_equal()
+
+Element-wise less than or equal.
+
+```python
+pc.less_equal(x, y, memory_pool=None)
+```
+
+## Logical Functions
+
+### and_()
+
+Element-wise logical AND.
+
+```python
+pc.and_(x, y, memory_pool=None)
+```
+
+### or_()
+
+Element-wise logical OR.
+
+```python
+pc.or_(x, y, memory_pool=None)
+```
+
+### invert()
+
+Element-wise logical NOT.
+
+```python
+arr = pa.array([True, False, True])
+result = pc.invert(arr)
+print(result)  # [False, True, False]
+```
+
+## Expression API
+
+The Expression API provides a way to build complex compute expressions.
+
+### field()
+
+Reference a field in a dataset.
+
+```python
+pc.field('column_name')
+pc.field(('nested', 'field'))
+pc.field(0)  # By index
+```
+
+<ParamField path="name_or_index" type="str, tuple, or int">
+  Field name, nested field tuple, or column index.
+</ParamField>
+
+<ResponseField name="expr" type="Expression">
+  Field reference expression.
+</ResponseField>
+
+### scalar()
+
+Create a scalar expression.
+
+```python
+expr = pc.scalar(42)
+expr = pc.scalar('hello')
+```
+
+<ParamField path="value" type="bool, int, float, or str">
+  Python value to convert to expression.
+</ParamField>
+
+<ResponseField name="expr" type="Expression">
+  Scalar value expression.
+</ResponseField>
+
+### Example: Complex Expressions
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+import pyarrow.dataset as ds
+
+# Create a filter expression
+filter_expr = (pc.field('age') > 18) & (pc.field('income') < 100000)
+
+# Use with dataset filtering
+table = pa.table({
+    'age': [25, 15, 35, 45],
+    'income': [50000, 0, 80000, 120000]
+})
+
+filtered = table.filter(filter_expr)
+print(filtered)
+```
+
+## Function Registry
+
+### list_functions()
+
+List all available compute functions.
+
+```python
+functions = pc.list_functions()
+print(functions[:10])  # Show first 10
+```
+
+<ResponseField name="functions" type="list of str">
+  Names of all available functions.
+</ResponseField>
+
+### get_function()
+
+Get a function by name.
+
+```python
+func = pc.get_function('add')
+print(func)
+```
+
+<ParamField path="name" type="str">
+  Function name.
+</ParamField>
+
+<ResponseField name="function" type="Function">
+  The compute function object.
+</ResponseField>
+
+### call_function()
+
+Call a function by name.
+
+```python
+pc.call_function(name, args, options=None, memory_pool=None)
+```
+
+<ParamField path="name" type="str">
+  Function name to call.
+</ParamField>
+
+<ParamField path="args" type="list">
+  Function arguments.
+</ParamField>
+
+<ParamField path="options" type="FunctionOptions" default="None">
+  Function-specific options.
+</ParamField>
+
+<ResponseField name="result" type="Array or Scalar">
+  Function result.
+</ResponseField>

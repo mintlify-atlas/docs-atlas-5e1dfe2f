@@ -1,0 +1,561 @@
+---
+title: "R Quickstart"
+description: "Get started with Arrow in R - from installation to working with tables, datasets, and dplyr queries"
+---
+
+This guide will get you up and running with the Arrow R package quickly. You'll learn how to create tables, read/write files, and analyze data using familiar dplyr syntax.
+
+## Prerequisites
+
+You'll need:
+- R 4.0 or higher
+- Basic familiarity with R and dplyr
+- Recommended: tidyverse for best experience
+
+<Steps>
+
+<Step title="Install Arrow">
+
+<Tabs>
+  <Tab title="CRAN (Recommended)">
+    ```r
+    install.packages("arrow")
+    ```
+  </Tab>
+  <Tab title="Development Version">
+    ```r
+    # Install from R-universe
+    install.packages("arrow", repos = "https://apache.r-universe.dev")
+    ```
+  </Tab>
+  <Tab title="With tidyverse">
+    ```r
+    install.packages(c("arrow", "dplyr"))
+    ```
+  </Tab>
+</Tabs>
+
+Load the package and verify:
+
+```r
+library(arrow)
+packageVersion("arrow")
+```
+
+</Step>
+
+<Step title="Create Your First Arrow Table">
+
+Arrow Tables are similar to data frames but use Arrow's efficient columnar format.
+
+```r
+library(arrow)
+
+# Create an Arrow table directly
+dat <- arrow_table(
+  x = 1:3,
+  y = c("a", "b", "c")
+)
+
+print(dat)
+# Output:
+# Table
+# 3 rows x 2 columns
+# $x <int32>
+# $y <string>
+```
+
+**Convert from data frame:**
+
+```r
+# From an existing data frame
+df <- data.frame(
+  day = c(1L, 12L, 17L, 23L, 28L),
+  month = c(1L, 3L, 5L, 7L, 1L),
+  year = c(1990L, 2000L, 1995L, 2000L, 1995L)
+)
+
+birthdays_table <- arrow_table(df)
+print(birthdays_table)
+```
+
+**Key differences from data frames:**
+- Columns stored contiguously in memory
+- More efficient for large data
+- Can be larger than memory with datasets
+- Works with dplyr verbs
+
+</Step>
+
+<Step title="Access and Subset Tables">
+
+Arrow Tables support familiar R subsetting operations.
+
+```r
+library(arrow)
+
+dat <- arrow_table(
+  x = 1:5,
+  y = c("a", "b", "c", "d", "e"),
+  z = c(10.5, 20.3, 30.1, 40.7, 50.2)
+)
+
+# Extract columns
+dat$x          # Get column as ChunkedArray
+dat[["y"]]     # Same as above
+
+# Subset rows and columns
+dat[1:2, ]     # First two rows
+dat[, 1:2]     # First two columns
+dat[1:2, 1:2]  # Both
+
+# Convert to data frame for R operations
+as.data.frame(dat)
+```
+
+**Individual columns are ChunkedArrays:**
+
+```r
+y_column <- dat$y
+class(y_column)  # "ChunkedArray"
+
+# Convert to R vector if needed
+y_vector <- as.vector(y_column)
+class(y_vector)  # "character"
+```
+
+</Step>
+
+<Step title="Write and Read Parquet Files">
+
+Parquet is the recommended format for Arrow data in R.
+
+```r
+library(arrow)
+library(dplyr)
+
+# Create sample data
+birthdays <- data.frame(
+  day = c(1L, 12L, 17L, 23L, 28L),
+  month = c(1L, 3L, 5L, 7L, 1L),
+  year = c(1990L, 2000L, 1995L, 2000L, 1995L)
+)
+
+# Write to Parquet
+write_parquet(birthdays, "birthdays.parquet")
+
+# Read back as data frame (default)
+birthdays_df <- read_parquet("birthdays.parquet")
+print(birthdays_df)
+
+# Read as Arrow Table
+birthdays_table <- read_parquet(
+  "birthdays.parquet",
+  as_data_frame = FALSE
+)
+print(birthdays_table)
+```
+
+**Read with column selection:**
+
+```r
+# Read only specific columns
+days_only <- read_parquet(
+  "birthdays.parquet",
+  col_select = c("day", "year")
+)
+print(days_only)
+```
+
+**Why Parquet?**
+- Fast reading and writing
+- Efficient compression
+- Preserves data types
+- Industry standard
+
+</Step>
+
+<Step title="Query with dplyr">
+
+Arrow Tables work seamlessly with dplyr for data manipulation.
+
+```r
+library(arrow)
+library(dplyr)
+
+# Use built-in dataset for examples
+data(starwars, package = "dplyr")
+
+# Write to Parquet
+write_parquet(starwars, "starwars.parquet")
+
+# Read as Arrow Table
+sw_table <- read_parquet("starwars.parquet", as_data_frame = FALSE)
+
+# Use dplyr verbs on Arrow Table
+result <- sw_table |>
+  filter(!is.na(height)) |>
+  select(name, height, mass) |>
+  mutate(height_m = height / 100) |>
+  arrange(desc(height)) |>
+  collect()  # Brings results into R
+
+print(head(result))
+```
+
+**Lazy evaluation:**
+
+```r
+# Operations are not executed until collect()
+query <- sw_table |>
+  filter(homeworld == "Tatooine") |>
+  select(name, height, mass)
+
+# This is a query plan, not results
+class(query)  # "arrow_dplyr_query"
+
+# Execute and bring into R
+results <- collect(query)
+class(results)  # "data.frame"
+```
+
+**Available dplyr verbs:**
+- `filter()`, `select()`, `mutate()`
+- `arrange()`, `group_by()`, `summarize()`
+- `left_join()`, `inner_join()`, etc.
+- `count()`, `distinct()`
+
+</Step>
+
+<Step title="Work with Datasets">
+
+For data that doesn't fit in memory, use Datasets with partitioning.
+
+```r
+library(arrow)
+library(dplyr)
+
+# Create sample data
+set.seed(1234)
+random_data <- data.frame(
+  x = rnorm(100000),
+  y = rnorm(100000),
+  subset = sample(10, 100000, replace = TRUE)
+)
+
+# Write partitioned dataset
+random_data |>
+  group_by(subset) |>
+  write_dataset("random_data", format = "parquet")
+
+# See the partitioned files
+list.files("random_data", recursive = TRUE)
+# Output:
+# [1] "subset=1/part-0.parquet" "subset=2/part-0.parquet" ...
+
+# Open dataset (doesn't load into memory)
+dset <- open_dataset("random_data")
+class(dset)  # "FileSystemDataset"
+
+print(dset)
+```
+
+**Query the dataset:**
+
+```r
+# Use dplyr on the dataset
+result <- dset |>
+  filter(subset %in% c(1, 2, 3)) |>
+  select(x, y, subset) |>
+  filter(x > 0) |>
+  collect()
+
+print(nrow(result))
+```
+
+**Benefits:**
+- Works with data larger than RAM
+- Only loads needed partitions
+- Fast filtering with partition pruning
+- Supports multiple file formats
+
+</Step>
+
+<Step title="Read and Write CSV Files">
+
+Arrow provides fast CSV I/O that's much faster than base R.
+
+```r
+library(arrow)
+
+# Create sample CSV
+df <- data.frame(
+  name = c("Alice", "Bob", "Carol"),
+  age = c(30, 25, 35),
+  city = c("NYC", "SF", "LA")
+)
+
+write.csv(df, "data.csv", row.names = FALSE)
+
+# Read with Arrow (much faster than read.csv)
+data_arrow <- read_csv_arrow("data.csv")
+print(data_arrow)
+
+# Read as Arrow Table
+data_table <- read_csv_arrow(
+  "data.csv",
+  as_data_frame = FALSE
+)
+print(data_table)
+
+# Write CSV with Arrow
+write_csv_arrow(df, "output.csv")
+```
+
+**For large CSV files:**
+
+```r
+# Stream large CSV files
+open_csv_dataset("large_file.csv") |>
+  filter(column > 100) |>
+  select(column1, column2) |>
+  collect()
+```
+
+</Step>
+
+</Steps>
+
+## Complete Example
+
+Here's a complete workflow demonstrating common Arrow operations in R:
+
+```r
+library(arrow)
+library(dplyr)
+
+# 1. Create data
+sales_data <- data.frame(
+  date = as.Date("2023-01-01") + 0:99,
+  product = sample(c("A", "B", "C"), 100, replace = TRUE),
+  quantity = sample(1:20, 100, replace = TRUE),
+  price = runif(100, 10, 100)
+)
+
+# 2. Write to Parquet
+write_parquet(sales_data, "sales.parquet")
+cat("Wrote", nrow(sales_data), "rows to sales.parquet\n")
+
+# 3. Read and analyze with dplyr
+results <- read_parquet("sales.parquet", as_data_frame = FALSE) |>
+  mutate(revenue = quantity * price) |>
+  group_by(product) |>
+  summarize(
+    total_quantity = sum(quantity),
+    total_revenue = sum(revenue),
+    avg_price = mean(price),
+    .groups = "drop"
+  ) |>
+  arrange(desc(total_revenue)) |>
+  collect()
+
+print(results)
+
+# 4. Write partitioned dataset
+sales_data |>
+  mutate(month = format(date, "%Y-%m")) |>
+  group_by(month) |>
+  write_dataset("sales_by_month", format = "parquet")
+
+cat("\nPartitioned files:\n")
+print(list.files("sales_by_month", recursive = TRUE))
+
+# 5. Query specific partition
+january_sales <- open_dataset("sales_by_month") |>
+  filter(month == "2023-01") |>
+  collect()
+
+cat("\nJanuary sales:", nrow(january_sales), "rows\n")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Working with Datasets" icon="database" href="/r/datasets">
+    Learn about multi-file datasets and partitioning
+  </Card>
+  <Card title="Data Wrangling" icon="table" href="/r/dplyr">
+    Deep dive into dplyr integration
+  </Card>
+  <Card title="Cloud Storage" icon="cloud" href="/r/cloud">
+    Connect to S3 and GCS
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/r">
+    Complete R package documentation
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+### Convert Between Formats
+
+```r
+# CSV to Parquet
+read_csv_arrow("data.csv") |>
+  write_parquet("data.parquet")
+
+# Parquet to Feather
+read_parquet("data.parquet") |>
+  write_feather("data.arrow")
+```
+
+### Work with Large CSV Files
+
+```r
+# Read CSV as dataset for large files
+open_csv_dataset("huge.csv") |>
+  filter(year == 2023) |>
+  group_by(category) |>
+  summarize(total = sum(value)) |>
+  collect()
+```
+
+### Join Datasets
+
+```r
+sales <- read_parquet("sales.parquet", as_data_frame = FALSE)
+products <- read_parquet("products.parquet", as_data_frame = FALSE)
+
+result <- sales |>
+  left_join(products, by = "product_id") |>
+  collect()
+```
+
+### Schema Control
+
+```r
+# Read with specific schema
+schema <- schema(
+  name = string(),
+  age = int32(),
+  balance = float64()
+)
+
+table <- read_csv_arrow(
+  "data.csv",
+  schema = schema,
+  as_data_frame = FALSE
+)
+```
+
+## Performance Tips
+
+<AccordionGroup>
+  <Accordion title="Use as_data_frame = FALSE for large data">
+    Keep data in Arrow format until you need it in R:
+    ```r
+    # Good: stays in Arrow format
+    result <- read_parquet("big.parquet", as_data_frame = FALSE) |>
+      filter(year == 2023) |>
+      collect()
+    
+    # Avoid: loads all data before filtering
+    result <- read_parquet("big.parquet") |>
+      filter(year == 2023)
+    ```
+  </Accordion>
+  
+  <Accordion title="Use datasets for multi-file data">
+    ```r
+    # Efficient: reads all files as one dataset
+    dset <- open_dataset("data/")
+    
+    # Inefficient: reading files individually
+    files <- list.files("data/", full.names = TRUE)
+    df <- lapply(files, read_parquet) |> bind_rows()
+    ```
+  </Accordion>
+  
+  <Accordion title="Write partitioned data">
+    Partition large datasets for faster queries:
+    ```r
+    data |>
+      group_by(year, month) |>
+      write_dataset("output/", format = "parquet")
+    ```
+  </Accordion>
+  
+  <Accordion title="Use collect() at the end">
+    Build up your entire dplyr query before calling `collect()`:
+    ```r
+    # Good: one call to collect()
+    result <- table |>
+      filter(x > 0) |>
+      mutate(y = x * 2) |>
+      collect()
+    
+    # Avoid: multiple collect() calls
+    result <- collect(table) |>
+      filter(x > 0) |>
+      mutate(y = x * 2)
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Installation issues">
+    If installation fails, try:
+    ```r
+    # Set environment variable for binary package
+    Sys.setenv(LIBARROW_BINARY = "true")
+    install.packages("arrow")
+    ```
+    
+    Or install system dependencies first:
+    ```bash
+    # Ubuntu/Debian
+    sudo apt-get install -y libarrow-dev
+    
+    # macOS
+    brew install apache-arrow
+    ```
+  </Accordion>
+  
+  <Accordion title="Function not supported">
+    Not all R/dplyr functions work on Arrow Tables. If you get an error:
+    ```r
+    # Convert to data frame first
+    result <- table |>
+      collect() |>  # Bring into R
+      complex_r_function()
+    ```
+  </Accordion>
+  
+  <Accordion title="Memory issues">
+    For large data, use datasets and avoid collect() until the end:
+    ```r
+    # Process in chunks
+    dset <- open_dataset("large_data/")
+    
+    # Query without loading all data
+    summary <- dset |>
+      group_by(category) |>
+      summarize(total = sum(value)) |>
+      collect()  # Only brings summary into R
+    ```
+  </Accordion>
+  
+  <Accordion title="Type conversion warnings">
+    Arrow types may differ from R types. Check schema:
+    ```r
+    table <- read_parquet("data.parquet", as_data_frame = FALSE)
+    print(table$schema)
+    
+    # Cast if needed
+    table <- table |>
+      mutate(column = cast(column, int64()))
+    ```
+  </Accordion>
+</AccordionGroup>

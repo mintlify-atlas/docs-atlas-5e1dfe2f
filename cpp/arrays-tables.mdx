@@ -1,0 +1,469 @@
+---
+title: Working with Arrays and Tables
+description: Learn how to create and manipulate arrays, chunked arrays, tables, and record batches in Arrow C++
+---
+
+Arrays and tables are the fundamental data structures in Apache Arrow. Arrays represent one-dimensional sequences of values, while tables organize multiple arrays into two-dimensional datasets.
+
+## Arrays
+
+The `arrow::Array` class represents a known-length sequence of values with a single data type. Arrays are immutable after construction.
+
+### Array Structure
+
+Internally, arrays consist of:
+- **Type**: Logical data type (int32, utf8, list, etc.)
+- **Length**: Number of values
+- **Null count**: Number of null values
+- **Buffers**: One or more buffers containing:
+  - Validity bitmap (null indicators)
+  - Value data
+  - Offsets (for variable-length types)
+
+```cpp
+#include <arrow/api.h>
+
+auto int64_array = std::static_pointer_cast<arrow::Int64Array>(array);
+
+// Get null bitmap pointer
+const uint8_t* null_bitmap = int64_array->null_bitmap_data();
+
+// Get raw value data
+const int64_t* data = int64_array->raw_values();
+
+// Check if value is null
+if (!int64_array->IsNull(index)) {
+    int64_t value = int64_array->Value(index);
+}
+```
+
+### Building Arrays
+
+Use `ArrayBuilder` classes to construct arrays incrementally:
+
+<Tabs>
+  <Tab title="Value by Value">
+    ```cpp
+    #include <arrow/api.h>
+    
+    arrow::Int64Builder builder;
+    builder.Append(1);
+    builder.Append(2);
+    builder.Append(3);
+    builder.AppendNull();  // Add null value
+    builder.Append(5);
+    
+    std::shared_ptr<arrow::Array> array;
+    ARROW_RETURN_NOT_OK(builder.Finish(&array));
+    ```
+  </Tab>
+  
+  <Tab title="Bulk Append">
+    ```cpp
+    #include <arrow/api.h>
+    
+    arrow::Int64Builder builder;
+    builder.Reserve(5);  // Pre-allocate space
+    
+    std::vector<int64_t> values = {1, 2, 3, 4, 5};
+    std::vector<bool> validity = {true, true, false, true, true};
+    
+    builder.AppendValues(values, validity);
+    
+    std::shared_ptr<arrow::Array> array;
+    ARROW_RETURN_NOT_OK(builder.Finish(&array));
+    ```
+  </Tab>
+  
+  <Tab title="Unsafe (Fast)">
+    ```cpp
+    #include <arrow/api.h>
+    
+    arrow::Int64Builder builder;
+    builder.Reserve(5);  // MUST reserve first!
+    
+    // Unsafe methods skip bounds checking
+    builder.UnsafeAppend(1);
+    builder.UnsafeAppend(2);
+    builder.UnsafeAppend(3);
+    builder.UnsafeAppendNull();
+    builder.UnsafeAppend(5);
+    
+    std::shared_ptr<arrow::Array> array;
+    ARROW_RETURN_NOT_OK(builder.Finish(&array));
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+For best performance, call `Reserve()` or `Resize()` before building, and use bulk `AppendValues()` methods when possible.
+</Tip>
+
+### String and Binary Arrays
+
+String and binary types use offset buffers for variable-length data:
+
+```cpp
+#include <arrow/api.h>
+
+arrow::StringBuilder builder;
+builder.Append("Hello");
+builder.Append("World");
+builder.AppendNull();
+builder.Append("Arrow");
+
+std::shared_ptr<arrow::Array> array;
+ARROW_RETURN_NOT_OK(builder.Finish(&array));
+
+auto string_array = std::static_pointer_cast<arrow::StringArray>(array);
+std::cout << string_array->GetString(0) << std::endl;  // "Hello"
+```
+
+### List Arrays
+
+List arrays contain nested sequences:
+
+```cpp
+#include <arrow/api.h>
+
+// Build list<int32>
+auto value_builder = std::make_shared<arrow::Int32Builder>();
+arrow::ListBuilder list_builder(arrow::default_memory_pool(), value_builder);
+
+// Append [1, 2, 3]
+list_builder.Append();
+value_builder->Append(1);
+value_builder->Append(2);
+value_builder->Append(3);
+
+// Append [4, 5]
+list_builder.Append();
+value_builder->Append(4);
+value_builder->Append(5);
+
+// Append null
+list_builder.AppendNull();
+
+std::shared_ptr<arrow::Array> array;
+ARROW_RETURN_NOT_OK(list_builder.Finish(&array));
+```
+
+### Struct Arrays
+
+Struct arrays bundle multiple fields together:
+
+```cpp
+#include <arrow/api.h>
+
+// Create builders for each field
+arrow::Int32Builder id_builder;
+arrow::StringBuilder name_builder;
+
+// Append values
+id_builder.Append(1);
+name_builder.Append("Alice");
+
+id_builder.Append(2);
+name_builder.Append("Bob");
+
+// Finish individual arrays
+std::shared_ptr<arrow::Array> id_array, name_array;
+ARROW_RETURN_NOT_OK(id_builder.Finish(&id_array));
+ARROW_RETURN_NOT_OK(name_builder.Finish(&name_array));
+
+// Create struct array
+auto fields = {
+    arrow::field("id", arrow::int32()),
+    arrow::field("name", arrow::utf8())
+};
+
+ARROW_ASSIGN_OR_RAISE(auto struct_array,
+    arrow::StructArray::Make({id_array, name_array}, fields));
+```
+
+### Creating Arrays from JSON
+
+For testing and prototyping, use the JSON helpers:
+
+```cpp
+#include <arrow/json/from_string.h>
+
+using arrow::json::ArrayFromJSONString;
+
+// Simple types
+ARROW_ASSIGN_OR_RAISE(auto int_array,
+    ArrayFromJSONString(arrow::int32(), "[1, 2, 3, null, 5]"));
+
+ARROW_ASSIGN_OR_RAISE(auto str_array,
+    ArrayFromJSONString(arrow::utf8(), 
+        R"(["Hello", "World", null, "Arrow"])"));
+
+// Complex types
+ARROW_ASSIGN_OR_RAISE(auto list_array,
+    ArrayFromJSONString(arrow::list(arrow::int64()),
+        "[[1, 2], null, [3, 4, 5], []]"));
+
+ARROW_ASSIGN_OR_RAISE(auto struct_array,
+    ArrayFromJSONString(
+        arrow::struct_({
+            arrow::field("x", arrow::int32()),
+            arrow::field("y", arrow::int32())
+        }),
+        "[[1, 2], [3, 4], null]"));
+```
+
+<Note>
+The JSON helpers are convenient but not optimized for performance. For production workloads, use the appropriate builders or read from CSV/Parquet.
+</Note>
+
+## Chunked Arrays
+
+`ChunkedArray` represents a logical sequence of values split across multiple array chunks:
+
+```cpp
+#include <arrow/api.h>
+
+std::vector<std::shared_ptr<arrow::Array>> chunks;
+
+// Build first chunk
+arrow::Int64Builder builder;
+builder.AppendValues({1, 2, 3});
+std::shared_ptr<arrow::Array> chunk1;
+ARROW_RETURN_NOT_OK(builder.Finish(&chunk1));
+chunks.push_back(chunk1);
+
+// Build second chunk
+builder.Reset();
+builder.AppendValues({4, 5, 6, 7});
+std::shared_ptr<arrow::Array> chunk2;
+ARROW_RETURN_NOT_OK(builder.Finish(&chunk2));
+chunks.push_back(chunk2);
+
+// Create chunked array
+auto chunked = std::make_shared<arrow::ChunkedArray>(chunks);
+
+std::cout << "Chunks: " << chunked->num_chunks() << std::endl;      // 2
+std::cout << "Length: " << chunked->length() << std::endl;          // 7
+std::cout << "Null count: " << chunked->null_count() << std::endl;  // 0
+```
+
+### When to Use Chunked Arrays
+
+Chunked arrays are useful for:
+- **Large datasets** that exceed 2^31 elements (array size limit)
+- **Incremental construction** without pre-knowing total size
+- **Memory efficiency** when working with multiple sources
+- **Tables** which always use chunked arrays internally
+
+## Schemas
+
+Schemas describe the structure of tabular data:
+
+```cpp
+#include <arrow/api.h>
+
+// Create fields
+auto field_a = arrow::field("id", arrow::int32());
+auto field_b = arrow::field("name", arrow::utf8());
+auto field_c = arrow::field("score", arrow::float64());
+
+// Create schema
+auto schema = arrow::schema({field_a, field_b, field_c});
+
+// Access schema properties
+std::cout << "Fields: " << schema->num_fields() << std::endl;
+std::cout << "Field 0: " << schema->field(0)->name() << std::endl;
+
+// Add metadata
+auto metadata = arrow::key_value_metadata({
+    {"source", "database"},
+    {"version", "1.0"}
+});
+auto schema_with_meta = schema->WithMetadata(metadata);
+```
+
+## Tables
+
+`Table` is a two-dimensional dataset with chunked arrays as columns:
+
+```cpp
+#include <arrow/api.h>
+
+// Build arrays
+arrow::Int32Builder id_builder;
+arrow::StringBuilder name_builder;
+
+id_builder.AppendValues({1, 2, 3, 4});
+name_builder.AppendValues({"Alice", "Bob", "Charlie", "David"});
+
+std::shared_ptr<arrow::Array> id_array, name_array;
+ARROW_RETURN_NOT_OK(id_builder.Finish(&id_array));
+ARROW_RETURN_NOT_OK(name_builder.Finish(&name_array));
+
+// Create schema
+auto schema = arrow::schema({
+    arrow::field("id", arrow::int32()),
+    arrow::field("name", arrow::utf8())
+});
+
+// Create table
+auto table = arrow::Table::Make(schema, {id_array, name_array});
+
+std::cout << "Rows: " << table->num_rows() << std::endl;       // 4
+std::cout << "Columns: " << table->num_columns() << std::endl;  // 2
+
+// Access columns
+std::shared_ptr<arrow::ChunkedArray> col0 = table->column(0);
+std::cout << "Column 0 name: " << table->schema()->field(0)->name() << std::endl;
+```
+
+### Table Operations
+
+<Tabs>
+  <Tab title="Slicing">
+    ```cpp
+    // Slice rows
+    std::shared_ptr<arrow::Table> slice = table->Slice(1, 2);
+    // Returns rows 1-2 (length 2)
+    
+    // Slice from offset to end
+    std::shared_ptr<arrow::Table> tail = table->Slice(2);
+    ```
+  </Tab>
+  
+  <Tab title="Column Selection">
+    ```cpp
+    // Select specific columns
+    ARROW_ASSIGN_OR_RAISE(auto subset,
+        table->SelectColumns({0, 2}));
+    
+    // Remove columns
+    ARROW_ASSIGN_OR_RAISE(auto removed,
+        table->RemoveColumn(1));
+    
+    // Add column
+    auto new_col = /* create chunked array */;
+    ARROW_ASSIGN_OR_RAISE(auto expanded,
+        table->AddColumn(2, arrow::field("new", arrow::int64()), new_col));
+    ```
+  </Tab>
+  
+  <Tab title="Concatenation">
+    ```cpp
+    // Concatenate tables vertically (add rows)
+    std::vector<std::shared_ptr<arrow::Table>> tables = {table1, table2};
+    ARROW_ASSIGN_OR_RAISE(auto combined,
+        arrow::ConcatenateTables(tables));
+    
+    // Note: schemas must match
+    ```
+  </Tab>
+</Tabs>
+
+## Record Batches
+
+`RecordBatch` is similar to a table but with contiguous (non-chunked) arrays:
+
+```cpp
+#include <arrow/api.h>
+
+// Create arrays (same as table example)
+arrow::Int32Builder id_builder;
+arrow::StringBuilder name_builder;
+
+id_builder.AppendValues({1, 2, 3});
+name_builder.AppendValues({"Alice", "Bob", "Charlie"});
+
+std::shared_ptr<arrow::Array> id_array, name_array;
+ARROW_RETURN_NOT_OK(id_builder.Finish(&id_array));
+ARROW_RETURN_NOT_OK(name_builder.Finish(&name_array));
+
+// Create schema
+auto schema = arrow::schema({
+    arrow::field("id", arrow::int32()),
+    arrow::field("name", arrow::utf8())
+});
+
+// Create record batch
+auto batch = arrow::RecordBatch::Make(
+    schema, 
+    3,  // num_rows
+    {id_array, name_array}
+);
+```
+
+### Table vs Record Batch
+
+| Feature | Table | Record Batch |
+|---------|-------|-------------|
+| Columns | Chunked arrays | Contiguous arrays |
+| Size | Can be very large | Limited by chunk size |
+| Use case | Working with large datasets | IPC, serialization, incremental processing |
+| Portability | C++ concept only | Part of Arrow format (IPC) |
+
+### Converting Between Tables and Batches
+
+```cpp
+// Table to record batches
+auto reader = std::make_shared<arrow::TableBatchReader>(*table);
+reader->set_chunksize(1000);  // Batch size
+
+std::shared_ptr<arrow::RecordBatch> batch;
+while (true) {
+    ARROW_RETURN_NOT_OK(reader->ReadNext(&batch));
+    if (batch == nullptr) break;
+    // Process batch
+}
+
+// Record batches to table
+std::vector<std::shared_ptr<arrow::RecordBatch>> batches = {batch1, batch2};
+ARROW_ASSIGN_OR_RAISE(auto table,
+    arrow::Table::FromRecordBatches(batches));
+```
+
+## Slicing
+
+Zero-copy slicing creates views into existing data:
+
+```cpp
+// Slice array (offset, length)
+std::shared_ptr<arrow::Array> slice = array->Slice(2, 5);
+
+// Slice from offset to end
+std::shared_ptr<arrow::Array> tail = array->Slice(10);
+
+// Slice chunked array
+std::shared_ptr<arrow::ChunkedArray> chunked_slice = 
+    chunked_array->Slice(100, 50);
+
+// Slice table
+std::shared_ptr<arrow::Table> table_slice = table->Slice(0, 1000);
+
+// Slice record batch
+std::shared_ptr<arrow::RecordBatch> batch_slice = batch->Slice(10, 90);
+```
+
+<Tip>
+Slicing is a zero-copy operation. The sliced object shares memory with the original, making it very efficient.
+</Tip>
+
+## Size Limitations
+
+Be aware of Arrow's size constraints:
+
+- **Arrays**: Most implementations limit arrays to 2^31 elements
+- **String/Binary arrays**: Limited to 2GB of data (use LargeString/LargeBinary for more)
+- **List arrays**: Limited to 2^31 elements (use LargeList for more)
+
+<Note>
+For large datasets, use chunked arrays or tables to work around single-array size limits.
+</Note>
+
+## Best Practices
+
+1. **Pre-allocate**: Call `Reserve()` before building arrays
+2. **Use bulk methods**: `AppendValues()` is faster than individual `Append()` calls
+3. **Prefer chunked arrays**: For large or growing datasets
+4. **Zero-copy when possible**: Use slicing instead of copying
+5. **Check status**: Always check `Status` and `Result<T>` return values
+6. **Immutability**: Remember arrays are immutable after construction

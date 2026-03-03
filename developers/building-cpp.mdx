@@ -1,0 +1,403 @@
+---
+title: Building C++ from Source
+description: Comprehensive guide to building Apache Arrow C++ libraries from source with CMake presets and manual configuration
+---
+
+This guide covers building the Arrow C++ libraries from source. Arrow uses CMake as a build configuration system and supports both CMake presets and manual configuration.
+
+## System Requirements
+
+Building Arrow C++ requires:
+
+- A C++20-enabled compiler (gcc 12+ on Linux)
+- CMake 3.25 or higher
+- `make` or `ninja` build utilities on Linux/macOS
+- At least 1GB RAM for minimal builds, 4GB for debug builds with tests, 8GB for full builds
+
+### Installing Dependencies
+
+<CodeGroup>
+
+```bash Ubuntu/Debian
+sudo apt-get install \
+    build-essential \
+    ninja-build \
+    cmake
+```
+
+```bash Fedora
+sudo dnf install \
+    cmake \
+    gcc \
+    gcc-c++ \
+    ninja-build \
+    make
+```
+
+```bash Alpine
+apk add autoconf \
+        bash \
+        cmake \
+        g++ \
+        gcc \
+        ninja \
+        make
+```
+
+```bash Arch Linux
+sudo pacman -S --needed \
+    base-devel \
+    ninja \
+    cmake
+```
+
+```bash macOS
+# Clone Arrow repository first
+git clone https://github.com/apache/arrow.git
+cd arrow
+
+# Install dependencies via Homebrew
+brew update && brew bundle --file=cpp/Brewfile
+```
+
+```bash MSYS2
+pacman --sync --refresh --noconfirm \
+  ccache \
+  git \
+  mingw-w64-${MSYSTEM_CARCH}-boost \
+  mingw-w64-${MSYSTEM_CARCH}-brotli \
+  mingw-w64-${MSYSTEM_CARCH}-cmake \
+  mingw-w64-${MSYSTEM_CARCH}-gcc \
+  mingw-w64-${MSYSTEM_CARCH}-gflags \
+  mingw-w64-${MSYSTEM_CARCH}-glog \
+  mingw-w64-${MSYSTEM_CARCH}-gtest \
+  mingw-w64-${MSYSTEM_CARCH}-lz4 \
+  mingw-w64-${MSYSTEM_CARCH}-protobuf \
+  mingw-w64-${MSYSTEM_CARCH}-python3-numpy \
+  mingw-w64-${MSYSTEM_CARCH}-rapidjson \
+  mingw-w64-${MSYSTEM_CARCH}-snappy \
+  mingw-w64-${MSYSTEM_CARCH}-thrift \
+  mingw-w64-${MSYSTEM_CARCH}-zlib \
+  mingw-w64-${MSYSTEM_CARCH}-zstd
+```
+
+</CodeGroup>
+
+## Building with CMake Presets
+
+CMake presets (available in CMake 3.21+) provide preconfigured build configurations for common use cases.
+
+<Steps>
+
+### Clone the repository
+
+```bash
+git clone https://github.com/apache/arrow.git
+cd arrow/cpp
+```
+
+### List available presets
+
+```bash
+cmake --list-presets
+```
+
+You'll see presets like:
+- `ninja-debug-minimal` - Debug build without optional features
+- `ninja-debug-basic` - Debug build with tests and reduced dependencies
+- `ninja-debug` - Debug build with tests and more optional components
+- `ninja-release-minimal` - Release build with minimal features
+- `ninja-release` - Full release build
+
+### Create build directory and configure
+
+```bash
+mkdir build
+cd build
+cmake .. --preset ninja-debug-minimal
+```
+
+### Build and install
+
+```bash
+cmake --build .
+cmake --install .
+```
+
+</Steps>
+
+<Tip>
+You can override preset options by adding custom CMake flags:
+```bash
+cmake .. --preset ninja-debug-minimal -DCMAKE_INSTALL_PREFIX=/usr/local
+```
+</Tip>
+
+<Warning>
+CMake presets are provided for convenience and may change over time. For automated builds, CI systems, and release scripts, use manual configuration with explicit options.
+</Warning>
+
+## Manual Configuration
+
+For more control over the build, use manual CMake configuration.
+
+<Steps>
+
+### Clone and navigate to cpp directory
+
+```bash
+git clone https://github.com/apache/arrow.git
+cd arrow/cpp
+```
+
+### Create and configure a build directory
+
+<CodeGroup>
+
+```bash Release Build
+mkdir build-release
+cd build-release
+cmake ..
+make -j8  # Adjust -j flag based on CPU cores
+make install
+```
+
+```bash Debug Build with Tests
+# Initialize submodules for test data
+git submodule update --init --recursive
+export ARROW_TEST_DATA=$PWD/../testing/data
+
+mkdir build-debug
+cd build-debug
+cmake -DCMAKE_BUILD_TYPE=Debug \
+      -DARROW_BUILD_TESTS=ON \
+      ..
+make -j8
+make unittest  # Run tests
+make install
+```
+
+</CodeGroup>
+
+### Build with Ninja (faster builds)
+
+```bash
+mkdir build
+cd build
+cmake -GNinja \
+      -DCMAKE_BUILD_TYPE=Release \
+      ..
+ninja
+ninja install
+```
+
+</Steps>
+
+### Build Types
+
+- **Debug**: No optimizations, includes debugging symbols (`-DCMAKE_BUILD_TYPE=Debug`)
+- **Release**: Optimizations enabled, no debug info (default)
+- **RelWithDebInfo**: Optimizations with debug info (`-DCMAKE_BUILD_TYPE=RelWithDebInfo`)
+
+## Optional Components
+
+Enable specific Arrow features by adding CMake flags:
+
+```bash
+cmake -DCMAKE_BUILD_TYPE=Release \
+      -DARROW_COMPUTE=ON \
+      -DARROW_CSV=ON \
+      -DARROW_DATASET=ON \
+      -DARROW_FILESYSTEM=ON \
+      -DARROW_FLIGHT=ON \
+      -DARROW_FLIGHT_SQL=ON \
+      -DARROW_GANDIVA=ON \
+      -DARROW_HDFS=ON \
+      -DARROW_JSON=ON \
+      -DARROW_ORC=ON \
+      -DARROW_PARQUET=ON \
+      -DARROW_S3=ON \
+      -DARROW_WITH_BROTLI=ON \
+      -DARROW_WITH_BZ2=ON \
+      -DARROW_WITH_LZ4=ON \
+      -DARROW_WITH_SNAPPY=ON \
+      -DARROW_WITH_ZLIB=ON \
+      -DARROW_WITH_ZSTD=ON \
+      ..
+```
+
+### Core Components
+
+| Option | Description |
+|--------|-------------|
+| `ARROW_COMPUTE` | Computational kernel functions |
+| `ARROW_CSV` | CSV reader module |
+| `ARROW_DATASET` | Dataset API (implies Filesystem API) |
+| `ARROW_FILESYSTEM` | Local and remote filesystem access |
+| `ARROW_FLIGHT` | Arrow Flight RPC system |
+| `ARROW_GANDIVA` | Expression compiler (requires LLVM) |
+| `ARROW_PARQUET` | Apache Parquet support |
+| `ARROW_JSON` | JSON reader module |
+| `ARROW_ORC` | Apache ORC integration |
+| `ARROW_S3` | Amazon S3 filesystem support |
+| `ARROW_GCS` | Google Cloud Storage support |
+
+### Compression Libraries
+
+| Option | Description |
+|--------|-------------|
+| `ARROW_WITH_BROTLI` | Brotli compression |
+| `ARROW_WITH_BZ2` | BZ2 compression |
+| `ARROW_WITH_LZ4` | LZ4 compression |
+| `ARROW_WITH_SNAPPY` | Snappy compression |
+| `ARROW_WITH_ZLIB` | Zlib (gzip) compression |
+| `ARROW_WITH_ZSTD` | ZSTD compression |
+
+## Development Options
+
+For development builds, enable additional targets:
+
+```bash
+cmake -DCMAKE_BUILD_TYPE=Debug \
+      -DARROW_BUILD_TESTS=ON \
+      -DARROW_BUILD_BENCHMARKS=ON \
+      -DARROW_BUILD_EXAMPLES=ON \
+      -DARROW_BUILD_UTILITIES=ON \
+      -DARROW_EXTRA_ERROR_CONTEXT=ON \
+      ..
+```
+
+| Option | Description |
+|--------|-------------|
+| `ARROW_BUILD_TESTS` | Build unit tests |
+| `ARROW_BUILD_BENCHMARKS` | Build benchmarks |
+| `ARROW_BUILD_EXAMPLES` | Build API examples |
+| `ARROW_BUILD_UTILITIES` | Build command-line utilities |
+| `ARROW_EXTRA_ERROR_CONTEXT` | Enhanced error messages with stack traces |
+| `ARROW_FUZZING` | Build fuzz testing targets |
+
+## Dependency Management
+
+Arrow supports multiple methods for resolving dependencies:
+
+```bash
+-DARROW_DEPENDENCY_SOURCE=AUTO     # Try system, fallback to bundled (default)
+-DARROW_DEPENDENCY_SOURCE=BUNDLED  # Build from source
+-DARROW_DEPENDENCY_SOURCE=SYSTEM   # Use system packages only
+-DARROW_DEPENDENCY_SOURCE=CONDA    # Use conda environment
+-DARROW_DEPENDENCY_SOURCE=VCPKG    # Use vcpkg packages
+-DARROW_DEPENDENCY_SOURCE=BREW     # Use Homebrew (macOS)
+```
+
+### Override Individual Dependencies
+
+You can override specific dependency sources:
+
+```bash
+cmake -DARROW_DEPENDENCY_SOURCE=SYSTEM \
+      -DProtobuf_SOURCE=BUNDLED \
+      ..
+```
+
+<Warning>
+When using `BUNDLED` dependencies, the build system will download source tarballs from the internet. For offline builds, use the `thirdparty/download_dependencies.sh` script to download sources in advance.
+</Warning>
+
+## Common Build Issues
+
+<AccordionGroup>
+
+<Accordion title="Locale errors during tests">
+On some Linux distributions, set an explicit locale:
+
+```bash
+export LC_ALL="en_US.UTF-8"
+```
+</Accordion>
+
+<Accordion title="Libraries installed to lib64 instead of lib">
+On multi-architecture Linux systems, specify:
+
+```bash
+cmake -DCMAKE_INSTALL_LIBDIR=lib ..
+```
+</Accordion>
+
+<Accordion title="Out of memory during compilation">
+Reduce parallel jobs or enable unity builds:
+
+```bash
+make -j2  # Use fewer parallel jobs
+# OR
+cmake -DCMAKE_UNITY_BUILD=ON ..  # Unity builds (faster but needs more RAM)
+```
+</Accordion>
+
+<Accordion title="Conda interfering with dependencies">
+If conda is installed but not being used, explicitly disable:
+
+```bash
+cmake -DARROW_DEPENDENCY_SOURCE=SYSTEM ..
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Modular Build Targets
+
+Build specific components instead of everything:
+
+```bash
+make arrow          # Just Arrow core libraries
+make parquet        # Just Parquet libraries
+make gandiva        # Just Gandiva libraries
+
+make arrow-tests    # Arrow tests
+make parquet-all    # Parquet + tests + benchmarks
+```
+
+<Tip>
+With Ninja, use `ninja arrow` instead of `make arrow`.
+</Tip>
+
+## Platform-Specific Notes
+
+### Windows
+
+See the dedicated [Windows build guide](/developers/cpp/windows) for Visual Studio and MSVC-specific instructions.
+
+### macOS with Xcode
+
+Generate an Xcode project for debugging:
+
+```bash
+cd cpp
+mkdir xcode-build
+cd xcode-build
+cmake .. -G Xcode \
+      -DARROW_BUILD_TESTS=ON \
+      -DCMAKE_BUILD_TYPE=DEBUG
+open arrow.xcodeproj
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="Python bindings" icon="python" href="/developers/building-python">
+  Build PyArrow with Arrow C++
+</Card>
+
+<Card title="R package" icon="code" href="/developers/building-r">
+  Build the Arrow R package
+</Card>
+
+<Card title="Development guide" icon="hammer">
+  Learn about C++ development workflows
+</Card>
+
+<Card title="Testing" icon="vial">
+  Run tests and benchmarks
+</Card>
+
+</CardGroup>

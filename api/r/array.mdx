@@ -1,0 +1,439 @@
+---
+title: Array Functions
+description: Apache Arrow R API reference for Array classes and functions
+---
+
+## Overview
+
+An `Array` is an immutable data array with some logical type and some length. Most logical types are contained in the base `Array` class; there are also subclasses for `DictionaryArray`, `ListArray`, `StructArray`, and other specialized types.
+
+## Array Class
+
+### Factory Method
+
+#### Array$create()
+
+Instantiates an `Array` and returns the appropriate subclass.
+
+<ParamField path="x" type="vector | list | data.frame">
+  An R vector, list, or data.frame
+</ParamField>
+
+<ParamField path="type" type="DataType" default="NULL">
+  An optional data type for `x`. If omitted, the type will be inferred from the data
+</ParamField>
+
+```r
+my_array <- Array$create(1:10)
+my_array$type
+# int32
+
+my_array$cast(int8())
+# <int8>
+# [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+```
+
+### Methods
+
+#### $IsNull()
+
+Return true if value at index is null. Does not boundscheck.
+
+<ParamField path="i" type="integer">
+  Zero-based index position
+</ParamField>
+
+```r
+na_array <- Array$create(c(1:5, NA))
+na_array$IsNull(0)  # FALSE
+na_array$IsNull(5)  # TRUE
+```
+
+#### $IsValid()
+
+Return true if value at index is valid. Does not boundscheck.
+
+<ParamField path="i" type="integer">
+  Zero-based index position
+</ParamField>
+
+```r
+na_array <- Array$create(c(1:5, NA))
+na_array$IsValid(5)  # FALSE
+```
+
+#### $length()
+
+Size in the number of elements this array contains.
+
+```r
+my_array <- Array$create(1:10)
+my_array$length()  # 10
+```
+
+#### $nbytes()
+
+Total number of bytes consumed by the elements of the array.
+
+```r
+my_array <- Array$create(1:10)
+my_array$nbytes()
+```
+
+#### $Equals()
+
+Check if this array is equal to another.
+
+<ParamField path="other" type="Array">
+  Another Array to compare with
+</ParamField>
+
+```r
+na_array <- Array$create(c(1:5, NA))
+na_array2 <- na_array
+na_array$Equals(na_array2)  # TRUE
+```
+
+#### $ApproxEquals()
+
+Check if this array is approximately equal to another.
+
+<ParamField path="other" type="Array">
+  Another Array to compare with
+</ParamField>
+
+#### $Diff()
+
+Return a string expressing the difference between two arrays.
+
+<ParamField path="other" type="Array">
+  Another Array to compare with
+</ParamField>
+
+#### $data()
+
+Return the underlying ArrayData.
+
+#### $as_vector()
+
+Convert to an R vector.
+
+```r
+my_array <- Array$create(1:10)
+my_array$as_vector()
+# [1]  1  2  3  4  5  6  7  8  9 10
+```
+
+#### $ToString()
+
+String representation of the array.
+
+#### $Slice()
+
+Construct a zero-copy slice of the array with the indicated offset and length.
+
+<ParamField path="offset" type="integer">
+  Starting position (zero-based)
+</ParamField>
+
+<ParamField path="length" type="integer" default="NULL">
+  Number of elements in the slice. If NULL, the slice goes until the end of the array
+</ParamField>
+
+```r
+na_array <- Array$create(c(1:5, NA))
+new_array <- na_array$Slice(5)
+new_array$offset  # 5
+```
+
+#### $Take()
+
+Return an `Array` with values at positions given by integers.
+
+<ParamField path="i" type="integer vector | Array">
+  Positions to take (R vector or Arrow Array)
+</ParamField>
+
+```r
+my_array <- Array$create(1:10)
+my_array$Take(c(0, 2, 4))
+```
+
+#### $Filter()
+
+Return an `Array` with values at positions where logical vector is TRUE.
+
+<ParamField path="i" type="logical vector | Array">
+  Logical vector or Arrow boolean Array
+</ParamField>
+
+<ParamField path="keep_na" type="logical" default="TRUE">
+  Whether to keep NA values
+</ParamField>
+
+```r
+my_array <- Array$create(1:10)
+my_array$Filter(c(TRUE, FALSE, TRUE, FALSE, TRUE, FALSE, TRUE, FALSE, TRUE, FALSE))
+```
+
+#### $SortIndices()
+
+Return an `Array` of integer positions that can be used to rearrange the `Array` in ascending or descending order.
+
+<ParamField path="descending" type="logical" default="FALSE">
+  Whether to sort in descending order
+</ParamField>
+
+#### $RangeEquals()
+
+Check if a range of values is equal to another array.
+
+<ParamField path="other" type="Array">
+  Another Array to compare with
+</ParamField>
+
+<ParamField path="start_idx" type="integer">
+  Starting index in this array
+</ParamField>
+
+<ParamField path="end_idx" type="integer">
+  Ending index in this array
+</ParamField>
+
+<ParamField path="other_start_idx" type="integer" default="0">
+  Starting index in the other array
+</ParamField>
+
+#### $cast()
+
+Alter the data in the array to change its type.
+
+<ParamField path="target_type" type="DataType">
+  The target data type
+</ParamField>
+
+<ParamField path="safe" type="logical" default="TRUE">
+  Whether to check for overflows or other unsafe conversions
+</ParamField>
+
+<ParamField path="options" type="CastOptions" default="cast_options(safe)">
+  Casting options
+</ParamField>
+
+```r
+my_array <- Array$create(1:10)
+my_array$cast(int8())
+```
+
+#### $View()
+
+Construct a zero-copy view of this array with the given type.
+
+<ParamField path="type" type="DataType">
+  The data type for the view
+</ParamField>
+
+#### $Validate()
+
+Perform validation checks to determine obvious inconsistencies within the array's internal data. This can be an expensive check, potentially O(length).
+
+### Active Bindings
+
+#### $null_count
+
+The number of null entries in the array.
+
+```r
+na_array <- Array$create(c(1:5, NA))
+na_array$null_count  # 1
+```
+
+#### $offset
+
+A relative position into another array's data, to enable zero-copy slicing.
+
+#### $type
+
+Logical type of data.
+
+```r
+my_array <- Array$create(1:10)
+my_array$type
+# DataType
+# int32
+```
+
+## DictionaryArray Class
+
+`DictionaryArray` is a subclass of `Array` for dictionary-encoded data, similar to R factors.
+
+### Factory Method
+
+#### DictionaryArray$create()
+
+<ParamField path="x" type="vector | Array">
+  An R vector or Array of integers for the dictionary indices, or an R factor
+</ParamField>
+
+<ParamField path="dict" type="vector | Array" default="NULL">
+  An R vector or Array of dictionary values (like R factor levels). Not needed if `x` is a factor
+</ParamField>
+
+```r
+# From a factor
+factor_array <- DictionaryArray$create(factor(c("a", "b", "a", "c")))
+
+# From indices and dictionary
+indices <- c(0L, 1L, 0L, 2L)
+dict <- c("a", "b", "c")
+dict_array <- DictionaryArray$create(indices, dict)
+```
+
+### Methods
+
+#### $indices()
+
+Return the indices array.
+
+#### $dictionary()
+
+Return the dictionary array.
+
+### Active Bindings
+
+#### $ordered
+
+Whether the dictionary is ordered.
+
+## StructArray Class
+
+`StructArray` is a subclass of `Array` for struct (nested) data.
+
+### Factory Method
+
+#### StructArray$create()
+
+Create a StructArray from named arrays or vectors.
+
+```r
+struct_array <- StructArray$create(
+  x = c(1, 2, 3),
+  y = c("a", "b", "c")
+)
+```
+
+### Methods
+
+#### $field()
+
+Extract a field by integer position.
+
+<ParamField path="i" type="integer">
+  Zero-based field index
+</ParamField>
+
+#### $GetFieldByName()
+
+Extract a field by name.
+
+<ParamField path="name" type="character">
+  Field name
+</ParamField>
+
+```r
+struct_array <- StructArray$create(x = c(1, 2, 3), y = c("a", "b", "c"))
+struct_array$GetFieldByName("x")
+```
+
+#### $Flatten()
+
+Flatten the struct array into a list of arrays.
+
+## ListArray Class
+
+`ListArray` is a subclass of `Array` for list data.
+
+### Methods
+
+#### $values()
+
+Return the values array (all list elements flattened).
+
+#### $value_length()
+
+Return the length of a specific list element.
+
+<ParamField path="i" type="integer">
+  Zero-based index
+</ParamField>
+
+#### $value_offset()
+
+Return the offset of a specific list element.
+
+<ParamField path="i" type="integer">
+  Zero-based index
+</ParamField>
+
+#### $raw_value_offsets()
+
+Return the raw offsets array.
+
+### Active Bindings
+
+#### $value_type
+
+The data type of the list values.
+
+## Helper Functions
+
+### as_arrow_array()
+
+Convert an object to an Arrow Array. This is an S3 generic that allows methods to be defined in other packages.
+
+<ParamField path="x" type="object">
+  An object to convert to an Arrow Array
+</ParamField>
+
+<ParamField path="type" type="DataType" default="NULL">
+  A data type for the final Array. If NULL, will be inferred
+</ParamField>
+
+```r
+as_arrow_array(1:5)
+as_arrow_array(c("a", "b", "c"))
+```
+
+### concat_arrays()
+
+Concatenate zero or more Arrays into a single array. This operation will make a copy of its input.
+
+<ParamField path="..." type="Array">
+  Zero or more Array objects to concatenate
+</ParamField>
+
+<ParamField path="type" type="DataType" default="NULL">
+  An optional type describing the desired type for the final Array
+</ParamField>
+
+```r
+concat_arrays(Array$create(1:3), Array$create(4:5))
+# <int32>
+# [1, 2, 3, 4, 5]
+```
+
+### arrow_array()
+
+Alias for `Array$create()`.
+
+<ParamField path="x" type="vector | list | data.frame">
+  An R object representable as an Arrow array
+</ParamField>
+
+<ParamField path="type" type="DataType" default="NULL">
+  An optional data type. If omitted, will be inferred from the data
+</ParamField>
+
+```r
+my_array <- arrow_array(1:10)
+```

@@ -1,0 +1,333 @@
+---
+title: Installing Python Library (PyArrow)
+description: Install PyArrow, the Python library for Apache Arrow, for fast data processing and analytics
+---
+
+PyArrow is the Python library for Apache Arrow, providing a Python API for Arrow's functionality along with tools for integration with pandas, NumPy, and other Python data tools.
+
+## Quick Install
+
+Install PyArrow using pip or conda:
+
+<CodeGroup>
+
+```bash pip
+pip install pyarrow
+```
+
+```bash conda
+conda install pyarrow -c conda-forge
+```
+
+</CodeGroup>
+
+These commands install the latest stable version of PyArrow with pre-compiled binary wheels for your platform.
+
+## Supported Platforms
+
+PyArrow provides pre-built binary wheels for:
+
+- **Linux**: x86_64, aarch64 (ARM64)
+- **macOS**: Intel (x86_64) and Apple Silicon (ARM64)
+- **Windows**: x86_64
+
+Supported Python versions: 3.9, 3.10, 3.11, 3.12, and 3.13
+
+## Installation Methods
+
+### Using pip (PyPI)
+
+Install from the Python Package Index (PyPI):
+
+<Steps>
+
+<Step title="Install PyArrow">
+```bash
+pip install pyarrow
+```
+
+This installs the latest stable version.
+</Step>
+
+<Step title="Install a specific version">
+```bash
+# Install a specific version
+pip install pyarrow==15.0.0
+
+# Install the latest version in a major series
+pip install "pyarrow>=15.0.0,<16.0.0"
+```
+</Step>
+
+<Step title="Verify installation">
+```bash
+python -c "import pyarrow as pa; print(pa.__version__)"
+```
+</Step>
+
+</Steps>
+
+<Warning>
+**Windows Users**: If you encounter import errors, you may need to install the [Visual C++ Redistributable for Visual Studio](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170#latest-microsoft-visual-c-redistributable-version).
+</Warning>
+
+### Using conda (conda-forge)
+
+Install from the conda-forge channel:
+
+<Steps>
+
+<Step title="Install from conda-forge">
+```bash
+conda install pyarrow -c conda-forge
+```
+
+The `-c conda-forge` flag ensures you get the latest version from conda-forge.
+</Step>
+
+<Step title="Create a new environment with PyArrow">
+```bash
+conda create -n arrow-env python=3.11 pyarrow -c conda-forge
+conda activate arrow-env
+```
+</Step>
+
+<Step title="Verify installation">
+```bash
+python -c "import pyarrow as pa; print(pa.__version__)"
+```
+</Step>
+
+</Steps>
+
+<Note>
+conda-forge provides binary packages across all supported platforms and often includes additional features like S3 support.
+</Note>
+
+## Installing Optional Dependencies
+
+PyArrow has optional dependencies for additional functionality:
+
+<CodeGroup>
+
+```bash pandas integration
+# Install PyArrow with pandas
+pip install pyarrow pandas
+```
+
+```bash All optional dependencies
+# Install with commonly used optional dependencies
+pip install pyarrow pandas numpy
+```
+
+```bash Development version
+# Install the latest development version (nightly)
+pip install --extra-index-url https://pypi.fury.io/arrow-nightlies/ \
+    --prefer-binary --pre pyarrow
+```
+
+</CodeGroup>
+
+## Testing Your Installation
+
+Verify PyArrow is working correctly:
+
+<Steps>
+
+<Step title="Import PyArrow">
+```python
+import pyarrow as pa
+print(f"PyArrow version: {pa.__version__}")
+```
+</Step>
+
+<Step title="Create a simple array">
+```python
+import pyarrow as pa
+
+# Create an Arrow array
+arr = pa.array([1, 2, 3, 4, 5])
+print(arr)
+print(f"Type: {arr.type}")
+```
+</Step>
+
+<Step title="Test Parquet support">
+```python
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+# Create a simple table
+table = pa.table({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})
+print("Parquet support available!")
+```
+</Step>
+
+<Step title="Test pandas integration">
+```python
+import pyarrow as pa
+import pandas as pd
+
+# Create a pandas DataFrame
+df = pd.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
+
+# Convert to Arrow table
+table = pa.Table.from_pandas(df)
+print(f"Arrow table shape: {table.shape}")
+
+# Convert back to pandas
+df2 = table.to_pandas()
+print("Pandas integration working!")
+```
+</Step>
+
+</Steps>
+
+## Common Use Cases
+
+### Reading and Writing Parquet Files
+
+```python
+import pyarrow as pa
+import pyarrow.parquet as pq
+import pandas as pd
+
+# Create a DataFrame
+df = pd.DataFrame({
+    'name': ['Alice', 'Bob', 'Charlie'],
+    'age': [25, 30, 35],
+    'city': ['New York', 'London', 'Paris']
+})
+
+# Write to Parquet
+table = pa.Table.from_pandas(df)
+pq.write_table(table, 'data.parquet')
+
+# Read from Parquet
+table2 = pq.read_table('data.parquet')
+df2 = table2.to_pandas()
+print(df2)
+```
+
+### Working with CSV Files
+
+```python
+import pyarrow.csv as csv
+import pyarrow as pa
+
+# Read CSV file
+table = csv.read_csv('data.csv')
+
+# Convert to pandas if needed
+df = table.to_pandas()
+```
+
+### Memory-Mapped Files for Large Datasets
+
+```python
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+# Read large Parquet file without loading into memory
+parquet_file = pq.ParquetFile('large_data.parquet')
+
+# Read in batches
+for batch in parquet_file.iter_batches(batch_size=10000):
+    # Process batch
+    df = batch.to_pandas()
+    # Your processing here
+```
+
+## Version Compatibility
+
+<Note>
+PyArrow follows semantic versioning. The Arrow IPC format is stable, but API changes may occur between major versions. Always check the [changelog](https://arrow.apache.org/docs/python/changes.html) when upgrading.
+</Note>
+
+### Python Version Support
+
+- **Python 3.9+**: Recommended for the latest PyArrow versions
+- **Python 3.8**: Supported in PyArrow < 15.0
+- **Python 3.7 and earlier**: No longer supported
+
+## Troubleshooting
+
+<AccordionGroup>
+
+<Accordion title="ImportError on Windows">
+If you get an import error on Windows, install the Visual C++ Redistributable:
+
+1. Download from [Microsoft's official page](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
+2. Install the x64 version
+3. Restart your Python environment
+</Accordion>
+
+<Accordion title="Module not found error">
+Ensure PyArrow is installed in the correct Python environment:
+
+```bash
+# Check which Python you're using
+which python
+
+# Check if PyArrow is installed
+pip list | grep pyarrow
+
+# Reinstall if needed
+pip install --force-reinstall pyarrow
+```
+</Accordion>
+
+<Accordion title="Version conflicts with other packages">
+If you have conflicts with NumPy or pandas:
+
+```bash
+# Update all related packages
+pip install --upgrade pyarrow pandas numpy
+
+# Or create a fresh environment
+conda create -n fresh-env python=3.11 pyarrow pandas numpy
+conda activate fresh-env
+```
+</Accordion>
+
+<Accordion title="Slow import times">
+First import of PyArrow may be slow. This is normal. Subsequent imports are faster:
+
+```python
+import pyarrow as pa  # First import may take a few seconds
+# Subsequent operations are fast
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Building from Source
+
+For development or custom builds:
+
+<Warning>
+Building PyArrow from source requires Arrow C++ to be built first. This is an advanced option and pre-built wheels are recommended for most users.
+</Warning>
+
+```bash
+# Clone the repository
+git clone https://github.com/apache/arrow.git
+cd arrow/python
+
+# Install build dependencies
+pip install -r requirements-build.txt
+
+# Build and install
+python setup.py build_ext --build-type=release install
+```
+
+See the [Python Development Guide](https://arrow.apache.org/docs/developers/python/index.html) for detailed instructions.
+
+## Next Steps
+
+Now that you have PyArrow installed:
+
+- Explore the [PyArrow Documentation](https://arrow.apache.org/docs/python/)
+- Learn about [Pandas Integration](https://arrow.apache.org/docs/python/pandas.html)
+- Try the [PyArrow Cookbook](https://arrow.apache.org/cookbook/py/)
+- Read about [Performance Tips](https://arrow.apache.org/docs/python/memory.html)

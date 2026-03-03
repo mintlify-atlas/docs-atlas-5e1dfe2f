@@ -1,0 +1,588 @@
+---
+title: I/O and Memory Management
+description: Learn about Arrow's I/O abstractions, memory management, buffers, and filesystem support
+---
+
+Apache Arrow provides comprehensive abstractions for I/O operations and memory management, enabling efficient data processing across various storage backends.
+
+## Memory Management
+
+### Buffers
+
+Buffers encapsulate raw memory with well-defined lifetime semantics:
+
+```cpp
+#include <arrow/buffer.h>
+#include <arrow/io/memory.h>
+
+// Allocate a mutable buffer
+ARROW_ASSIGN_OR_RAISE(auto buffer, 
+    arrow::AllocateBuffer(4096));
+
+uint8_t* data = buffer->mutable_data();
+memcpy(data, "Hello Arrow", 11);
+
+std::cout << "Size: " << buffer->size() << std::endl;
+std::cout << "Capacity: " << buffer->capacity() << std::endl;
+```
+
+### Buffer Types
+
+<Tabs>
+  <Tab title="Immutable">
+    ```cpp
+    // Read-only buffer
+    std::shared_ptr<arrow::Buffer> buffer = 
+        arrow::Buffer::FromString("immutable data");
+    
+    const uint8_t* data = buffer->data();
+    int64_t size = buffer->size();
+    
+    // Cannot modify: buffer->mutable_data() would fail
+    ```
+  </Tab>
+  
+  <Tab title="Mutable">
+    ```cpp
+    // Writable buffer
+    ARROW_ASSIGN_OR_RAISE(auto buffer,
+        arrow::AllocateBuffer(1024));
+    
+    uint8_t* data = buffer->mutable_data();
+    // Write data...
+    ```
+  </Tab>
+  
+  <Tab title="Resizable">
+    ```cpp
+    // Buffer that can grow
+    ARROW_ASSIGN_OR_RAISE(auto buffer,
+        arrow::AllocateResizableBuffer(1024));
+    
+    // Resize to larger capacity
+    ARROW_RETURN_NOT_OK(buffer->Resize(2048));
+    
+    uint8_t* data = buffer->mutable_data();
+    ```
+  </Tab>
+</Tabs>
+
+### Building Buffers
+
+Use `BufferBuilder` for incremental construction:
+
+```cpp
+#include <arrow/buffer_builder.h>
+
+arrow::BufferBuilder builder;
+
+// Pre-allocate
+ARROW_RETURN_NOT_OK(builder.Resize(100));
+
+// Append data
+ARROW_RETURN_NOT_OK(builder.Append("Hello ", 6));
+ARROW_RETURN_NOT_OK(builder.Append("World", 5));
+
+// Finish and get buffer
+ARROW_ASSIGN_OR_RAISE(auto buffer, builder.Finish());
+```
+
+For typed data, use `TypedBufferBuilder`:
+
+```cpp
+#include <arrow/buffer_builder.h>
+
+arrow::TypedBufferBuilder<int32_t> builder;
+
+ARROW_RETURN_NOT_OK(builder.Reserve(5));
+ARROW_RETURN_NOT_OK(builder.Append(10));
+ARROW_RETURN_NOT_OK(builder.Append(20));
+ARROW_RETURN_NOT_OK(builder.Append(30));
+
+ARROW_ASSIGN_OR_RAISE(auto buffer, builder.Finish());
+
+// Access typed data
+const int32_t* data = 
+    reinterpret_cast<const int32_t*>(buffer->data());
+```
+
+### Slicing Buffers
+
+Create zero-copy views of buffers:
+
+```cpp
+// Create slice (offset, length)
+std::shared_ptr<arrow::Buffer> slice = 
+    arrow::SliceBuffer(buffer, 10, 100);
+
+// Slice a mutable buffer
+std::shared_ptr<arrow::MutableBuffer> mutable_slice = 
+    arrow::SliceMutableBuffer(mutable_buffer, 0, 50);
+```
+
+<Tip>
+Buffer slicing is zero-copy. The slice shares memory with the parent buffer and keeps it alive.
+</Tip>
+
+## Memory Pools
+
+`MemoryPool` instances control memory allocation:
+
+```cpp
+#include <arrow/memory_pool.h>
+
+// Get default memory pool
+arrow::MemoryPool* pool = arrow::default_memory_pool();
+
+// Allocate using specific pool
+ARROW_ASSIGN_OR_RAISE(auto buffer,
+    arrow::AllocateBuffer(1024, pool));
+
+// Check memory usage
+int64_t allocated = pool->bytes_allocated();
+int64_t max_memory = pool->max_memory();
+```
+
+### Memory Pool Types
+
+Arrow supports several memory pool implementations:
+
+<Tabs>
+  <Tab title="Default Pool">
+    ```cpp
+    // Default: jemalloc > mimalloc > system malloc
+    auto pool = arrow::default_memory_pool();
+    ```
+  </Tab>
+  
+  <Tab title="System Pool">
+    ```cpp
+    // Use standard malloc/free
+    auto pool = arrow::system_memory_pool();
+    ```
+  </Tab>
+  
+  <Tab title="Logging Pool">
+    ```cpp
+    // Wrap pool with logging
+    auto base = arrow::default_memory_pool();
+    auto pool = arrow::LoggingMemoryPool::Make(base);
+    
+    // Allocations are logged
+    ARROW_ASSIGN_OR_RAISE(auto buffer,
+        arrow::AllocateBuffer(1024, pool.get()));
+    ```
+  </Tab>
+</Tabs>
+
+### Custom Memory Pool
+
+Create a proxy pool for tracking:
+
+```cpp
+#include <arrow/memory_pool.h>
+
+class TrackingPool : public arrow::MemoryPool {
+public:
+    explicit TrackingPool(MemoryPool* pool) : pool_(pool) {}
+    
+    Status Allocate(int64_t size, int64_t alignment, 
+                    uint8_t** out) override {
+        allocations_++;
+        return pool_->Allocate(size, alignment, out);
+    }
+    
+    // Implement other methods...
+    
+    int64_t allocations() const { return allocations_; }
+    
+private:
+    MemoryPool* pool_;
+    std::atomic<int64_t> allocations_{0};
+};
+```
+
+<Note>
+Override the default memory pool using the `ARROW_DEFAULT_MEMORY_POOL` environment variable. Valid values: `jemalloc`, `mimalloc`, `system`.
+</Note>
+
+## Input/Output Streams
+
+### Reading Binary Data
+
+Arrow provides two reading interfaces:
+
+<Tabs>
+  <Tab title="Sequential (InputStream)">
+    ```cpp
+    #include <arrow/io/file.h>
+    
+    // Open file for sequential reading
+    ARROW_ASSIGN_OR_RAISE(auto input,
+        arrow::io::ReadableFile::Open("data.bin"));
+    
+    // Read into buffer
+    ARROW_ASSIGN_OR_RAISE(auto buffer,
+        input->Read(1024));
+    
+    // Read exact number of bytes
+    ARROW_ASSIGN_OR_RAISE(auto exact,
+        input->ReadAt(position, 512));
+    
+    ARROW_RETURN_NOT_OK(input->Close());
+    ```
+  </Tab>
+  
+  <Tab title="Random Access (RandomAccessFile)">
+    ```cpp
+    #include <arrow/io/file.h>
+    
+    // Open for random access
+    ARROW_ASSIGN_OR_RAISE(auto input,
+        arrow::io::ReadableFile::Open("data.bin"));
+    
+    // Get file size
+    ARROW_ASSIGN_OR_RAISE(int64_t size,
+        input->GetSize());
+    
+    // Read from specific position (thread-safe)
+    ARROW_ASSIGN_OR_RAISE(auto buffer,
+        input->ReadAt(position, length));
+    
+    // Parallel reads from multiple threads
+    #pragma omp parallel for
+    for (int i = 0; i < num_chunks; i++) {
+        auto chunk = input->ReadAt(i * chunk_size, chunk_size);
+        // Process chunk...
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Writing Binary Data
+
+```cpp
+#include <arrow/io/file.h>
+
+// Open file for writing
+ARROW_ASSIGN_OR_RAISE(auto output,
+    arrow::io::FileOutputStream::Open("output.bin"));
+
+// Write data
+const uint8_t* data = /* ... */;
+ARROW_RETURN_NOT_OK(output->Write(data, length));
+
+// Write buffer
+ARROW_RETURN_NOT_OK(output->Write(buffer));
+
+// Close and flush
+ARROW_RETURN_NOT_OK(output->Close());
+```
+
+### Memory-Mapped Files
+
+Memory mapping enables zero-copy file access:
+
+```cpp
+#include <arrow/io/memory.h>
+
+// Memory-map file for reading
+ARROW_ASSIGN_OR_RAISE(auto mmap,
+    arrow::io::MemoryMappedFile::Open(
+        "large_file.bin", 
+        arrow::io::FileMode::READ));
+
+// Access as buffer (zero-copy)
+ARROW_ASSIGN_OR_RAISE(auto buffer,
+    mmap->ReadAt(offset, length));
+
+// For writing
+ARROW_ASSIGN_OR_RAISE(auto mmap_write,
+    arrow::io::MemoryMappedFile::Create(
+        "output.bin", 
+        file_size));
+
+ARROW_RETURN_NOT_OK(mmap_write->Write(data, length));
+```
+
+<Tip>
+Use memory-mapped files for large read-only datasets. They provide excellent performance and let the OS manage memory efficiently.
+</Tip>
+
+### In-Memory Streams
+
+Work with data in memory without files:
+
+<Tabs>
+  <Tab title="Reading from Memory">
+    ```cpp
+    #include <arrow/io/memory.h>
+    
+    const uint8_t* data = /* existing data */;
+    int64_t size = /* data size */;
+    
+    // Create reader from existing memory
+    auto reader = std::make_shared<arrow::io::BufferReader>(
+        data, size);
+    
+    // Or from a buffer
+    auto buffer = /* arrow::Buffer */;
+    auto reader2 = std::make_shared<arrow::io::BufferReader>(buffer);
+    
+    // Read from it
+    ARROW_ASSIGN_OR_RAISE(auto chunk, reader->Read(100));
+    ```
+  </Tab>
+  
+  <Tab title="Writing to Memory">
+    ```cpp
+    #include <arrow/io/memory.h>
+    
+    // Create in-memory output stream
+    ARROW_ASSIGN_OR_RAISE(auto stream,
+        arrow::io::BufferOutputStream::Create(1024));
+    
+    // Write data
+    ARROW_RETURN_NOT_OK(stream->Write("Hello", 5));
+    ARROW_RETURN_NOT_OK(stream->Write(" World", 6));
+    
+    // Get result as buffer
+    ARROW_ASSIGN_OR_RAISE(auto buffer,
+        stream->Finish());
+    
+    std::cout << "Wrote " << buffer->size() 
+              << " bytes" << std::endl;
+    ```
+  </Tab>
+</Tabs>
+
+### Buffered Streams
+
+Add buffering for better performance:
+
+```cpp
+#include <arrow/io/file.h>
+#include <arrow/io/buffered.h>
+
+// Wrap input stream with buffering
+ARROW_ASSIGN_OR_RAISE(auto file,
+    arrow::io::ReadableFile::Open("data.bin"));
+
+ARROW_ASSIGN_OR_RAISE(auto buffered,
+    arrow::io::BufferedInputStream::Create(
+        16384,  // buffer size
+        arrow::default_memory_pool(),
+        file));
+
+// Reads are now buffered
+ARROW_ASSIGN_OR_RAISE(auto data, buffered->Read(1024));
+
+// Buffered output
+ARROW_ASSIGN_OR_RAISE(auto out_file,
+    arrow::io::FileOutputStream::Open("output.bin"));
+
+ARROW_ASSIGN_OR_RAISE(auto buffered_out,
+    arrow::io::BufferedOutputStream::Create(
+        16384,
+        arrow::default_memory_pool(),
+        out_file));
+```
+
+### Compressed Streams
+
+Read and write compressed data:
+
+```cpp
+#include <arrow/io/compressed.h>
+#include <arrow/util/compression.h>
+
+// Compressed input
+ARROW_ASSIGN_OR_RAISE(auto file,
+    arrow::io::ReadableFile::Open("data.gz"));
+
+ARROW_ASSIGN_OR_RAISE(auto codec,
+    arrow::util::Codec::Create(arrow::Compression::GZIP));
+
+ARROW_ASSIGN_OR_RAISE(auto compressed,
+    arrow::io::CompressedInputStream::Make(
+        codec.get(), file));
+
+// Read decompressed data
+ARROW_ASSIGN_OR_RAISE(auto buffer, compressed->Read(1024));
+
+// Compressed output
+ARROW_ASSIGN_OR_RAISE(auto out_file,
+    arrow::io::FileOutputStream::Open("output.gz"));
+
+ARROW_ASSIGN_OR_RAISE(auto compressed_out,
+    arrow::io::CompressedOutputStream::Make(
+        codec.get(), out_file));
+
+ARROW_RETURN_NOT_OK(compressed_out->Write(data, size));
+ARROW_RETURN_NOT_OK(compressed_out->Close());  // Important: flush compression
+```
+
+Supported compression formats:
+- GZIP
+- BROTLI
+- LZ4
+- ZSTD
+- SNAPPY
+- BZ2
+
+## Filesystems
+
+The filesystem abstraction provides unified access to different storage backends:
+
+```cpp
+#include <arrow/filesystem/api.h>
+
+// Local filesystem
+ARROW_ASSIGN_OR_RAISE(auto local_fs,
+    arrow::fs::FileSystemFromUri("file:///"));
+
+// Get file info
+ARROW_ASSIGN_OR_RAISE(auto info,
+    local_fs->GetFileInfo("/path/to/file.txt"));
+
+if (info.type() == arrow::fs::FileType::File) {
+    std::cout << "Size: " << info.size() << std::endl;
+    std::cout << "Modified: " << info.mtime() << std::endl;
+}
+
+// Open file for reading
+ARROW_ASSIGN_OR_RAISE(auto input,
+    local_fs->OpenInputStream("/path/to/file.txt"));
+
+// Open file for writing
+ARROW_ASSIGN_OR_RAISE(auto output,
+    local_fs->OpenOutputStream("/path/to/output.txt"));
+```
+
+### Cloud Storage
+
+<Tabs>
+  <Tab title="Amazon S3">
+    ```cpp
+    #include <arrow/filesystem/s3fs.h>
+    
+    // Initialize S3 (call once)
+    ARROW_RETURN_NOT_OK(
+        arrow::fs::EnsureS3Initialized());
+    
+    // Connect to S3
+    arrow::fs::S3Options options;
+    options.region = "us-west-2";
+    
+    ARROW_ASSIGN_OR_RAISE(auto s3_fs,
+        arrow::fs::S3FileSystem::Make(options));
+    
+    // Access S3 objects
+    ARROW_ASSIGN_OR_RAISE(auto input,
+        s3_fs->OpenInputStream("bucket/path/file.parquet"));
+    
+    // Or use URI
+    ARROW_ASSIGN_OR_RAISE(auto fs,
+        arrow::fs::FileSystemFromUri(
+            "s3://bucket/path?region=us-west-2"));
+    ```
+  </Tab>
+  
+  <Tab title="Google Cloud Storage">
+    ```cpp
+    #include <arrow/filesystem/gcsfs.h>
+    
+    // Initialize GCS (call once)
+    ARROW_RETURN_NOT_OK(
+        arrow::fs::EnsureGcsFinalized());
+    
+    // Connect to GCS
+    arrow::fs::GcsOptions options;
+    
+    ARROW_ASSIGN_OR_RAISE(auto gcs_fs,
+        arrow::fs::GcsFileSystem::Make(options));
+    
+    // Access GCS objects
+    ARROW_ASSIGN_OR_RAISE(auto input,
+        gcs_fs->OpenInputStream("bucket/path/file.parquet"));
+    ```
+  </Tab>
+  
+  <Tab title="HDFS">
+    ```cpp
+    #include <arrow/filesystem/hdfs.h>
+    
+    // Connect to HDFS
+    arrow::fs::HdfsOptions options;
+    options.endpoint.host = "namenode";
+    options.endpoint.port = 8020;
+    
+    ARROW_ASSIGN_OR_RAISE(auto hdfs_fs,
+        arrow::fs::HadoopFileSystem::Make(options));
+    
+    // Access HDFS files
+    ARROW_ASSIGN_OR_RAISE(auto input,
+        hdfs_fs->OpenInputStream("/user/data/file.parquet"));
+    ```
+  </Tab>
+</Tabs>
+
+### Filesystem Operations
+
+```cpp
+// List directory contents
+ARROW_ASSIGN_OR_RAISE(auto infos,
+    fs->GetFileInfo(arrow::fs::FileSelector("/path")));
+
+for (const auto& info : infos) {
+    std::cout << info.path() << ": " << info.size() << std::endl;
+}
+
+// Create directory
+ARROW_RETURN_NOT_OK(fs->CreateDir("/path/to/newdir"));
+
+// Delete file
+ARROW_RETURN_NOT_OK(fs->DeleteFile("/path/to/file.txt"));
+
+// Copy file (if supported)
+ARROW_RETURN_NOT_OK(fs->CopyFile("/source.txt", "/dest.txt"));
+
+// Move file
+ARROW_RETURN_NOT_OK(fs->Move("/old/path.txt", "/new/path.txt"));
+```
+
+<Note>
+Filesystem operations often run on the I/O thread pool. Increase the thread pool size for better concurrent performance: `arrow::io::SetIOThreadPoolCapacity(16)`.
+</Note>
+
+## Device Memory
+
+Arrow supports GPU and other device memory:
+
+```cpp
+#include <arrow/device.h>
+
+// Check if buffer is CPU-accessible
+if (buffer->is_cpu()) {
+    const uint8_t* data = buffer->data();
+    // Safe to access directly
+}
+
+// View buffer on another device
+auto cpu_mm = arrow::default_cpu_memory_manager();
+ARROW_ASSIGN_OR_RAISE(auto cpu_buffer,
+    arrow::Buffer::ViewOrCopy(buffer, cpu_mm));
+
+// Now safe to access on CPU
+const uint8_t* data = cpu_buffer->data();
+```
+
+## Best Practices
+
+1. **Use memory pools**: Pass `MemoryPool*` to allocation functions for better tracking
+2. **Prefer memory mapping**: For large read-only files
+3. **Enable buffering**: Wrap streams with buffered versions for small reads/writes
+4. **Check status**: Always verify `Status` and `Result<T>` returns
+5. **Close streams**: Explicitly close output streams to ensure data is flushed
+6. **Slicing is cheap**: Use buffer/array slicing instead of copying
+7. **Watch memory**: Monitor pool usage in long-running applications

@@ -1,0 +1,419 @@
+---
+title: Array Classes
+description: API reference for Apache Arrow C++ array classes
+---
+
+# Array Classes
+
+Array classes in Apache Arrow C++ provide container classes for columnar data of various types.
+
+## Base Array Classes
+
+### Array
+
+Base class for all array types. Immutable data array with some logical type and length.
+
+```cpp
+class Array
+```
+
+#### Methods
+
+<ResponseField name="length" type="int64_t">
+  Returns the number of elements in the array
+</ResponseField>
+
+<ResponseField name="offset" type="int64_t">
+  Returns the relative position into another array's data for zero-copy slicing
+</ResponseField>
+
+<ResponseField name="null_count" type="int64_t">
+  Returns the number of null entries in the array. Computed and cached on first call if not known at construction time
+</ResponseField>
+
+<ResponseField name="type" type="std::shared_ptr<DataType>">
+  Returns the data type of the array
+</ResponseField>
+
+<ResponseField name="IsNull" type="bool">
+  <ParamField path="i" type="int64_t" required>
+    Index to check
+  </ParamField>
+  
+  Returns true if the value at index is null. Does not perform bounds checking
+</ResponseField>
+
+<ResponseField name="IsValid" type="bool">
+  <ParamField path="i" type="int64_t" required>
+    Index to check
+  </ParamField>
+  
+  Returns true if the value at index is valid (not null). Does not perform bounds checking
+</ResponseField>
+
+<ResponseField name="GetScalar" type="Result<std::shared_ptr<Scalar>>">
+  <ParamField path="i" type="int64_t" required>
+    Index of element to retrieve
+  </ParamField>
+  
+  Returns a Scalar containing the value of this array at index i
+</ResponseField>
+
+<ResponseField name="Slice" type="std::shared_ptr<Array>">
+  <ParamField path="offset" type="int64_t" required>
+    Position of the first element in the slice
+  </ParamField>
+  <ParamField path="length" type="int64_t">
+    Length of the slice. Adjusted if not enough elements available
+  </ParamField>
+  
+  Constructs a zero-copy slice of the array with the indicated offset and length
+</ResponseField>
+
+<ResponseField name="SliceSafe" type="Result<std::shared_ptr<Array>>">
+  <ParamField path="offset" type="int64_t" required>
+    Position of the first element
+  </ParamField>
+  <ParamField path="length" type="int64_t">
+    Length of the slice
+  </ParamField>
+  
+  Input-checking variant of Slice that validates parameters
+</ResponseField>
+
+<ResponseField name="Equals" type="bool">
+  <ParamField path="other" type="const Array&" required>
+    Array to compare with
+  </ParamField>
+  <ParamField path="options" type="const EqualOptions&">
+    Equality comparison options
+  </ParamField>
+  
+  Performs equality comparison with another array. Does not include ArrayStatistics in comparison
+</ResponseField>
+
+<ResponseField name="View" type="Result<std::shared_ptr<Array>>">
+  <ParamField path="type" type="std::shared_ptr<DataType>" required>
+    Target data type
+  </ParamField>
+  
+  Constructs a zero-copy view of this array with the given type. Checks if types are layout-compatible
+</ResponseField>
+
+<ResponseField name="Validate" type="Status">
+  Performs cheap validation checks to determine obvious inconsistencies within the array's internal data. O(k) where k is the number of descendants
+</ResponseField>
+
+<ResponseField name="ValidateFull" type="Status">
+  Performs extensive validation checks. Potentially O(k*n) where k is the number of descendants and n is the array length
+</ResponseField>
+
+---
+
+## Numeric Arrays
+
+### NumericArray
+
+Template class for numeric data arrays with a corresponding C type.
+
+```cpp
+template <typename TYPE>
+class NumericArray : public PrimitiveArray
+```
+
+#### Type Aliases
+
+- `Int8Array` - Array of signed 8-bit integers
+- `Int16Array` - Array of signed 16-bit integers  
+- `Int32Array` - Array of signed 32-bit integers
+- `Int64Array` - Array of signed 64-bit integers
+- `UInt8Array` - Array of unsigned 8-bit integers
+- `UInt16Array` - Array of unsigned 16-bit integers
+- `UInt32Array` - Array of unsigned 32-bit integers
+- `UInt64Array` - Array of unsigned 64-bit integers
+- `FloatArray` - Array of 32-bit floating-point values
+- `DoubleArray` - Array of 64-bit floating-point values
+
+#### Methods
+
+<ResponseField name="Value" type="value_type">
+  <ParamField path="i" type="int64_t" required>
+    Index to retrieve
+  </ParamField>
+  
+  Returns the value at index i
+</ResponseField>
+
+<ResponseField name="raw_values" type="const value_type*">
+  Returns pointer to the raw value data
+</ResponseField>
+
+<ResponseField name="operator[]" type="std::optional<value_type>">
+  <ParamField path="i" type="int64_t" required>
+    Index to retrieve
+  </ParamField>
+  
+  Returns the value at index i, or nullopt if null
+</ResponseField>
+
+### BooleanArray
+
+Array class for boolean data.
+
+```cpp
+class BooleanArray : public PrimitiveArray
+```
+
+<ResponseField name="Value" type="bool">
+  <ParamField path="i" type="int64_t" required>
+    Index to retrieve
+  </ParamField>
+  
+  Returns the boolean value at index i
+</ResponseField>
+
+<ResponseField name="false_count" type="int64_t">
+  Returns the number of false (0) values among the valid values. Not cached
+</ResponseField>
+
+<ResponseField name="true_count" type="int64_t">
+  Returns the number of true (1) values among the valid values. Not cached
+</ResponseField>
+
+---
+
+## Binary Arrays
+
+### BinaryArray
+
+Array class for variable-size binary data.
+
+```cpp
+class BinaryArray : public BaseBinaryArray<BinaryType>
+```
+
+<ResponseField name="GetView" type="std::string_view">
+  <ParamField path="i" type="int64_t" required>
+    Index to retrieve
+  </ParamField>
+  
+  Returns binary value as a string_view
+</ResponseField>
+
+<ResponseField name="GetString" type="std::string">
+  <ParamField path="i" type="int64_t" required>
+    Index to retrieve
+  </ParamField>
+  
+  Returns binary value copied into a std::string
+</ResponseField>
+
+<ResponseField name="value_offset" type="offset_type">
+  <ParamField path="i" type="int64_t" required>
+    Index
+  </ParamField>
+  
+  Returns the data buffer absolute offset of the data for the value at the passed index
+</ResponseField>
+
+<ResponseField name="value_length" type="offset_type">
+  <ParamField path="i" type="int64_t" required>
+    Index
+  </ParamField>
+  
+  Returns the length of the data for the value at the passed index
+</ResponseField>
+
+### StringArray
+
+Array class for variable-size UTF-8 string data.
+
+```cpp
+class StringArray : public BinaryArray
+```
+
+Inherits all methods from BinaryArray.
+
+<ResponseField name="ValidateUTF8" type="Status">
+  Validates that this array contains only valid UTF-8 entries. Also implied by ValidateFull()
+</ResponseField>
+
+### FixedSizeBinaryArray
+
+Array class for fixed-size binary data.
+
+```cpp
+class FixedSizeBinaryArray : public PrimitiveArray
+```
+
+<ResponseField name="GetValue" type="const uint8_t*">
+  <ParamField path="i" type="int64_t" required>
+    Index to retrieve
+  </ParamField>
+  
+  Returns pointer to the binary value at index i
+</ResponseField>
+
+<ResponseField name="GetView" type="std::string_view">
+  <ParamField path="i" type="int64_t" required>
+    Index to retrieve
+  </ParamField>
+  
+  Returns binary value as a string_view
+</ResponseField>
+
+<ResponseField name="byte_width" type="int32_t">
+  Returns the fixed byte width of each value
+</ResponseField>
+
+---
+
+## Nested Arrays
+
+### ListArray
+
+Array class for variable-length list data.
+
+```cpp
+class ListArray : public BaseListArray<ListType>
+```
+
+<ResponseField name="values" type="std::shared_ptr<Array>">
+  Returns array object containing the list's values
+</ResponseField>
+
+<ResponseField name="value_offset" type="offset_type">
+  <ParamField path="i" type="int64_t" required>
+    Index
+  </ParamField>
+  
+  Returns the offset into values array for list at index i
+</ResponseField>
+
+<ResponseField name="value_length" type="offset_type">
+  <ParamField path="i" type="int64_t" required>
+    Index
+  </ParamField>
+  
+  Returns the length of the list at index i. Requires IsValid(i)
+</ResponseField>
+
+<ResponseField name="value_slice" type="std::shared_ptr<Array>">
+  <ParamField path="i" type="int64_t" required>
+    Index
+  </ParamField>
+  
+  Returns a slice of the values array for list at index i. Requires IsValid(i)
+</ResponseField>
+
+<ResponseField name="Flatten" type="Result<std::shared_ptr<Array>>">
+  <ParamField path="memory_pool" type="MemoryPool*">
+    Memory pool to use
+  </ParamField>
+  
+  Returns an Array that is a concatenation of the lists in this array, taking into account offsets and skipping null elements
+</ResponseField>
+
+<ResponseField name="FromArrays" type="Result<std::shared_ptr<ListArray>>">
+  <ParamField path="offsets" type="const Array&" required>
+    Array containing n+1 offsets (int32 type)
+  </ParamField>
+  <ParamField path="values" type="const Array&" required>
+    Array containing list values
+  </ParamField>
+  <ParamField path="pool" type="MemoryPool*">
+    Memory pool for allocations
+  </ParamField>
+  
+  Constructs a ListArray from arrays of offsets and child values
+</ResponseField>
+
+### StructArray
+
+Array class for struct data.
+
+```cpp
+class StructArray : public Array
+```
+
+<ResponseField name="field" type="std::shared_ptr<Array>">
+  <ParamField path="pos" type="int" required>
+    Field index
+  </ParamField>
+  
+  Returns the field at the given position with offset, length and null count adjusted
+</ResponseField>
+
+<ResponseField name="GetFieldByName" type="std::shared_ptr<Array>">
+  <ParamField path="name" type="const std::string&" required>
+    Field name
+  </ParamField>
+  
+  Returns the field with the given name, or nullptr if not found
+</ResponseField>
+
+<ResponseField name="Flatten" type="Result<ArrayVector>">
+  <ParamField path="pool" type="MemoryPool*">
+    Memory pool for allocations
+  </ParamField>
+  
+  Flattens this array as a vector of arrays, one for each field
+</ResponseField>
+
+<ResponseField name="GetFlattenedField" type="Result<std::shared_ptr<Array>>">
+  <ParamField path="index" type="int" required>
+    Field index
+  </ParamField>
+  <ParamField path="pool" type="MemoryPool*">
+    Memory pool for allocations
+  </ParamField>
+  
+  Gets one of the child arrays, combining its null bitmap with the parent struct array's bitmap
+</ResponseField>
+
+<ResponseField name="Make" type="Result<std::shared_ptr<StructArray>>">
+  <ParamField path="children" type="const ArrayVector&" required>
+    Child arrays
+  </ParamField>
+  <ParamField path="field_names" type="const std::vector<std::string>&" required>
+    Field names
+  </ParamField>
+  <ParamField path="null_bitmap" type="std::shared_ptr<Buffer>">
+    Validity bitmap
+  </ParamField>
+  
+  Returns a StructArray from child arrays and field names. Length and type are inferred
+</ResponseField>
+
+### MapArray
+
+Array class for map data (key-value pairs).
+
+```cpp
+class MapArray : public ListArray
+```
+
+<ResponseField name="keys" type="std::shared_ptr<Array>">
+  Returns array object containing all map keys
+</ResponseField>
+
+<ResponseField name="items" type="std::shared_ptr<Array>">
+  Returns array object containing all mapped items
+</ResponseField>
+
+<ResponseField name="FromArrays" type="Result<std::shared_ptr<Array>>">
+  <ParamField path="offsets" type="const std::shared_ptr<Array>&" required>
+    Array containing n+1 offsets (int32 type)
+  </ParamField>
+  <ParamField path="keys" type="const std::shared_ptr<Array>&" required>
+    Array containing key values
+  </ParamField>
+  <ParamField path="items" type="const std::shared_ptr<Array>&" required>
+    Array containing item values
+  </ParamField>
+  <ParamField path="pool" type="MemoryPool*">
+    Memory pool for allocations
+  </ParamField>
+  
+  Constructs a MapArray from arrays of offsets, keys, and items
+</ResponseField>

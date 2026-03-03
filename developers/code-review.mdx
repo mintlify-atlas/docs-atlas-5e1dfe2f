@@ -1,0 +1,192 @@
+---
+title: Code Review Process
+description: Guidelines and best practices for reviewing contributions to Apache Arrow
+---
+
+Code review is a critical part of maintaining the quality and long-term health of Apache Arrow. This guide outlines our principles, guidelines, and best practices for reviewing contributions.
+
+## Principles
+
+Apache Arrow is a foundational project that will evolve over many years while serving millions of users. We believe that being meticulous when reviewing brings greater rewards than being lenient and aiming for quick merges.
+
+Careful code reviews lead to:
+- **Better quality code** that is maintainable long-term
+- **More engaged contributors** who understand the code being changed
+- **A healthier project** with room to grow and accommodate emerging needs
+- **Better learning experiences** for both submitters and reviewers
+
+## General Guidelines
+
+### Meta-Guidelines
+
+**Use your own judgment.** These guidelines are not hard rules. Committers are expected to have sufficient expertise to adjust their approach based on their concerns and the context.
+
+These guidelines are:
+- Not listed in a particular order
+- Not intended to be used as a checklist
+- Not exhaustive
+
+## Review Criteria
+
+### Scope and Completeness
+
+- **No regressions**: Our general policy is to not introduce regressions or merge PRs that require follow-ons to function correctly
+- **Determine scope collaboratively**: Work with authors to decide what changes are in-scope and what should be pushed to follow-up issues
+- **Favor functional cohesion**: When integrating large features piecewise, divide changes by functionality (e.g., for a filesystem: metadata operations, then reading, then writing)
+
+### Public API Design
+
+- **Nudge toward best practices**: Safe APIs should be more prominent than unsafe ones that may crash or produce erroneous results
+- **Produce readable code**: Organize options logically rather than juxtaposing them all in function signatures
+- **Naming matters**: Ask yourself if code calling the new API would be understandable without reading the docs. Avoid vague naming; inaccurate naming is even worse
+- **Be mindful of terminology**: Follow established conventions. Reusing well-known terms for different purposes increases cognitive workload
+- **Mark experimental APIs**: If unsure about an API, mark it experimental, but don't use this as an excuse to skip basic design principles
+
+### Robustness
+
+- **Handle unusual inputs**: Public APIs won't crash or produce undefined behavior on unusual but valid inputs
+- **Defensive coding**: Use debug-only assertions and other defensive techniques for non-trivial algorithms
+- **Validate untrusted data**: APIs ingesting potentially untrusted data (file formats, network data) should avoid crashing or silent bugs on invalid input
+- **Check for errors**: When calling foreign APIs or system functions, always check for errors and propagate them
+
+### Performance
+
+- **Think about performance, don't obsess**: Algorithmic complexity matters for potentially large inputs. Micro-optimizations improving performance by 20%+ may be useful; smaller improvements may not be worth the complexity
+- **Measure, don't guess**: Use benchmarks to validate performance assumptions. Don't rely on intuition about compiler or hardware behavior
+- **Avoid compiler tricks**: Don't try to trick the compiler/interpreter unless critical. These tricks are brittle and platform-dependent
+- **Avoid rough edges**: Preventing degenerate behavior (memory blowups, etc.) may be more important than small common-case improvements
+
+See also: [Benchmarking Arrow](/developers/benchmarks)
+
+### Documentation
+
+These guidelines apply to both prose documentation and in-code docstrings:
+
+- **Avoid ambiguous wording**: "It is an error if..." is less clear than "An error is raised if..." or "Behavior is undefined if..."
+- **Focus on clarity**: Be mindful of spelling, grammar, expression, and concision. Clear communication is essential for global collaboration
+- **Support non-native speakers**: Some contributors don't have English as a native language. Help them and ask for external help if needed
+- **Use cross-linking**: Sphinx has great cross-linking capabilities (topic references, glossary terms, API references). Use them to increase documentation value
+
+### Testing
+
+- **Test all nominal cases**: If a function allows null values, test both null and non-null. If it allows different types, test them
+- **Test delicate functionality**: If an aspect is complex or subtle, it should be tested
+- **Exercise corner cases**: Test empty arrays, zero-chunk arrays, arrays with only nulls, etc. (especially important in C++)
+- **Use stress tests wisely**: Useful for uncovering synchronization bugs or validating complex computations, but balance usefulness against CI runtime costs
+
+## Social Aspects
+
+### Communication
+
+- **Respond in a timely manner**: Don't let questions remain unanswered for too long (two weeks is a reasonable heuristic)
+- **Be explicit about availability**: If you can't allocate time soon, say so. If you don't know the answer, say so
+- **Seek help when needed**: If you know someone with relevant expertise, gently ping them to help with blocking issues
+- **Check in on stalled PRs**: Contributors may be stuck rather than disinterested. Ask if they need help
+
+### Working with Contributors
+
+- **Identify contributor types**: Some want quick fixes; others are eager to learn. The latter are especially valuable as potential long-term contributors
+- **Be cautious with "fix it later"**: If a contributor lacks a track record of following through, request fixes before merging
+- **Push trivial changes yourself**: If a PR is ready except for trivial concerns, consider pushing changes yourself rather than asking the contributor
+- **Make contributing rewarding**: Strive to reduce frustration while maintaining quality standards
+- **Follow the Code of Conduct**: All communication is governed by the [Apache Code of Conduct](https://www.apache.org/foundation/policies/conduct.html)
+
+### Taking Over Stalled Contributions
+
+If a contribution is desirable but stalled:
+1. Ask the contributor if they're stuck or need help
+2. If they're not making progress, it's acceptable to take it up
+3. Out of politeness, ask the contributor first before taking over
+
+## Labeling Issues
+
+While reviewing PRs, identify whether issues need these labels:
+
+### Critical Fix
+
+Apply when the change fixes:
+- A security vulnerability
+- A bug causing incorrect or invalid data
+- A bug causing a crash (while the API contract is upheld)
+
+Note: Bugs causing errors don't count (they're obvious to users). Crash bugs are critical as potential DoS vectors.
+
+### Breaking Change
+
+Apply when the change breaks backwards compatibility in a public API.
+
+- In C++, this doesn't include ABI breaks except where we guarantee ABI compatibility (e.g., C Data Interface)
+- Experimental APIs are not exempt—they're just more likely to have this label
+
+Note: Breaking changes alter the API contract; critical fixes make implementations align with the existing contract.
+
+### Priority Labels
+
+- **Priority: Blocker** - Must be merged before next release (e.g., test/packaging failures)
+- **Priority: Critical** - High priority issues (superset of "Critical Fix")
+
+## Collaborators
+
+The collaborator role allows users to help with triage, labeling, and assigning issues.
+
+### Becoming a Collaborator
+
+- Ask to become a collaborator or be proposed by another community member
+- Must have been collaborating with the project for a period of time (creating PRs, answering questions, creating issues, reviewing PRs, etc.)
+- A PR must be created adding the user to the collaborators list in [`.asf.yaml`](https://github.com/apache/arrow/blob/main/.asf.yaml)
+- Committers review past collaborations and approve
+- Inactive collaborators may be removed from the list
+
+## Review Workflow
+
+<Steps>
+  <Step title="Initial Review">
+    Check that the PR:
+    - Has a clear description
+    - References the appropriate GitHub issue
+    - Includes tests for new functionality
+    - Follows style guidelines
+    - Doesn't introduce regressions
+  </Step>
+
+  <Step title="Technical Review">
+    Evaluate:
+    - API design and naming
+    - Code quality and maintainability  
+    - Test coverage and corner cases
+    - Performance implications
+    - Documentation completeness
+  </Step>
+
+  <Step title="Provide Feedback">
+    - Be specific and constructive
+    - Explain the reasoning behind suggestions
+    - Distinguish between required changes and suggestions
+    - Ask questions to understand the contributor's approach
+  </Step>
+
+  <Step title="Iterate">
+    - Respond to contributor questions and updates
+    - Be available for discussion
+    - Push trivial fixes yourself if appropriate
+    - Keep communication flowing
+  </Step>
+
+  <Step title="Approval and Merge">
+    - Approve when all concerns are addressed
+    - Apply appropriate labels
+    - A committer performs the squash merge
+    - Ensure proper attribution in the commit message
+  </Step>
+</Steps>
+
+## Resources
+
+- [Contributing Overview](/developers/contributing)
+- [Bug Reports and Feature Requests](https://arrow.apache.org/docs/developers/bug_reports.html)
+- [New Contributor's Guide](https://arrow.apache.org/docs/developers/guide/index.html)
+- [Apache Code of Conduct](https://www.apache.org/foundation/policies/conduct.html)
+
+---
+
+**Remember**: Code review is both a technical and social process. Our goal is to maintain high quality while creating a positive experience that encourages long-term contribution.

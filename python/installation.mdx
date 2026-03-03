@@ -1,0 +1,388 @@
+---
+title: Installation and Setup
+description: Install PyArrow and configure your Python environment
+---
+
+## Installation
+
+PyArrow is available via multiple package managers:
+
+<Tabs>
+  <Tab title="pip">
+    ```bash
+    # Install latest stable version
+    pip install pyarrow
+
+    # Install specific version
+    pip install pyarrow==15.0.0
+
+    # Install with extras (optional dependencies)
+    pip install pyarrow[parquet]
+    ```
+  </Tab>
+
+  <Tab title="conda">
+    ```bash
+    # Install from conda-forge channel (recommended)
+    conda install -c conda-forge pyarrow
+
+    # Install specific version
+    conda install -c conda-forge pyarrow=15.0.0
+    ```
+  </Tab>
+
+  <Tab title="Development">
+    ```bash
+    # Install development version from source
+    pip install git+https://github.com/apache/arrow.git@main#subdirectory=python
+
+    # Or clone and build locally
+    git clone https://github.com/apache/arrow.git
+    cd arrow/python
+    pip install -e .
+    ```
+  </Tab>
+</Tabs>
+
+## Verifying Installation
+
+Check that PyArrow is installed correctly:
+
+```python
+import pyarrow as pa
+
+# Display version
+print(f"PyArrow version: {pa.__version__}")
+
+# Check C++ library version
+print(f"Arrow C++ version: {pa.cpp_version}")
+
+# Show available modules
+pa.show_versions()
+```
+
+## System Requirements
+
+### Python Version
+
+PyArrow supports:
+- Python 3.8 or later
+- CPython implementation (PyPy not officially supported)
+
+### Operating Systems
+
+- **Linux**: x86_64, aarch64 (ARM64)
+- **macOS**: x86_64 (Intel), arm64 (Apple Silicon)
+- **Windows**: x86_64
+
+## Optional Dependencies
+
+PyArrow has optional dependencies for additional functionality:
+
+```bash
+# Pandas integration
+pip install pandas
+
+# NumPy for array operations
+pip install numpy
+
+# Cloud filesystems
+pip install pyarrow[s3]  # AWS S3 support
+pip install pyarrow[gcs]  # Google Cloud Storage
+pip install pyarrow[azure]  # Azure Blob Storage
+
+# All optional dependencies
+pip install pyarrow[all]
+```
+
+## Configuration
+
+### Memory Pool
+
+Configure the memory allocator:
+
+```python
+import pyarrow as pa
+
+# Use jemalloc (if available)
+if pa.jemalloc_memory_pool:
+    pa.set_memory_pool(pa.jemalloc_memory_pool())
+
+# Or use system allocator
+pa.set_memory_pool(pa.system_memory_pool())
+
+# Check current pool
+pool = pa.default_memory_pool()
+print(f"Using memory pool: {pool.backend_name}")
+```
+
+### CPU Count
+
+Control parallelism:
+
+```python
+import pyarrow as pa
+
+# Get default CPU count
+print(f"Default CPU count: {pa.cpu_count()}")
+
+# Set custom CPU count for parallel operations
+pa.set_cpu_count(4)
+
+# Get I/O thread pool size
+print(f"I/O threads: {pa.io_thread_count()}")
+
+# Set I/O thread count
+pa.set_io_thread_count(8)
+```
+
+### Environment Variables
+
+PyArrow respects several environment variables:
+
+```bash
+# Set Arrow home directory
+export ARROW_HOME=/path/to/arrow
+
+# Disable memory pooling
+export ARROW_DEFAULT_MEMORY_POOL=system
+
+# Set timezone database path
+export ARROW_TIMEZONE_DATABASE=/path/to/tzdata
+```
+
+## Building from Source
+
+<Note>
+  Building from source is only necessary if you need development features or custom build options.
+</Note>
+
+### Prerequisites
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install build-essential cmake
+
+# macOS
+brew install cmake
+
+# Windows
+# Install Visual Studio 2019 or later with C++ support
+```
+
+### Build Steps
+
+```bash
+# Clone the repository
+git clone https://github.com/apache/arrow.git
+cd arrow
+
+# Create build directory
+mkdir cpp/build
+cd cpp/build
+
+# Configure with CMake
+cmake .. \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DARROW_PYTHON=ON \
+  -DARROW_PARQUET=ON \
+  -DARROW_DATASET=ON
+
+# Build C++ library
+make -j8
+
+# Install Python package
+cd ../../python
+pip install -e .
+```
+
+### Build Options
+
+<Tabs>
+  <Tab title="Minimal Build">
+    ```bash
+    cmake .. \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DARROW_PYTHON=ON
+    ```
+  </Tab>
+
+  <Tab title="With Parquet">
+    ```bash
+    cmake .. \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DARROW_PYTHON=ON \
+      -DARROW_PARQUET=ON
+    ```
+  </Tab>
+
+  <Tab title="Full Features">
+    ```bash
+    cmake .. \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DARROW_PYTHON=ON \
+      -DARROW_PARQUET=ON \
+      -DARROW_DATASET=ON \
+      -DARROW_CSV=ON \
+      -DARROW_JSON=ON \
+      -DARROW_COMPUTE=ON \
+      -DARROW_S3=ON
+    ```
+  </Tab>
+</Tabs>
+
+## Checking Available Features
+
+Verify which features are enabled:
+
+```python
+import pyarrow as pa
+
+# Check module availability
+modules = ['csv', 'parquet', 'dataset', 'compute', 'flight', 'fs']
+for module in modules:
+    try:
+        __import__(f'pyarrow.{module}')
+        print(f"{module}: Available")
+    except ImportError:
+        print(f"{module}: Not available")
+
+# Check filesystem support
+from pyarrow import fs
+print(f"S3: {hasattr(fs, 'S3FileSystem')}")
+print(f"GCS: {hasattr(fs, 'GcsFileSystem')}")
+print(f"HDFS: {hasattr(fs, 'HadoopFileSystem')}")
+
+# Check compression codecs
+from pyarrow import Codec
+codecs = ['gzip', 'snappy', 'lz4', 'zstd', 'brotli']
+for codec in codecs:
+    print(f"{codec}: {Codec.is_available(codec)}")
+```
+
+## Troubleshooting
+
+### Import Errors
+
+If you encounter import errors:
+
+```python
+# Check if PyArrow is installed
+try:
+    import pyarrow as pa
+    print(f"PyArrow {pa.__version__} found")
+except ImportError as e:
+    print(f"PyArrow not found: {e}")
+    print("Install with: pip install pyarrow")
+```
+
+### Version Conflicts
+
+Check for version mismatches:
+
+```python
+import pyarrow as pa
+
+# Show detailed build information
+print(pa.build_info)
+print(f"Package kind: {pa.build_info.cpp_build_info.package_kind}")
+print(f"Build type: {pa.build_info.build_type}")
+```
+
+### Memory Issues
+
+If you encounter memory problems:
+
+```python
+import pyarrow as pa
+
+# Monitor memory usage
+pool = pa.default_memory_pool()
+print(f"Allocated: {pool.bytes_allocated()} bytes")
+print(f"Max memory: {pool.max_memory()} bytes")
+
+# Use a different allocator
+if pa.jemalloc_memory_pool:
+    pa.set_memory_pool(pa.jemalloc_memory_pool())
+```
+
+### Library Symlinks
+
+On Linux/macOS, create library symlinks if needed:
+
+```python
+import pyarrow as pa
+
+# Create symlinks for bundled libraries
+# (Only needed for building C++ extensions against PyArrow)
+pa.create_library_symlinks()
+```
+
+## IDE Setup
+
+<Tabs>
+  <Tab title="VS Code">
+    ```json
+    // .vscode/settings.json
+    {
+      "python.linting.enabled": true,
+      "python.linting.pylintEnabled": true,
+      "python.analysis.extraPaths": [],
+      "python.autoComplete.extraPaths": []
+    }
+    ```
+  </Tab>
+
+  <Tab title="PyCharm">
+    PyCharm will automatically detect PyArrow after installation.
+    
+    Enable type hints:
+    - Settings → Editor → Inspections → Python → Type Checker
+    - Check "Type checking" and "PEP 484 type hints"
+  </Tab>
+
+  <Tab title="Jupyter">
+    ```python
+    # Install Jupyter
+    pip install jupyter
+
+    # Start Jupyter notebook
+    jupyter notebook
+
+    # In notebook:
+    import pyarrow as pa
+    pa.show_versions()
+    ```
+  </Tab>
+</Tabs>
+
+## Docker Setup
+
+Use PyArrow in Docker:
+
+```dockerfile
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install PyArrow
+RUN pip install --no-cache-dir pyarrow pandas
+
+# Copy application
+COPY . /app
+WORKDIR /app
+
+CMD ["python", "app.py"]
+```
+
+## Next Steps
+
+Now that PyArrow is installed:
+
+- [Overview](/python/overview) - Learn about PyArrow's core concepts
+- [Tables and Arrays](/python/tables-arrays) - Work with columnar data
+- [Compute Functions](/python/compute) - Perform vectorized operations
+- [Parquet Files](/python/parquet) - Read and write Parquet files

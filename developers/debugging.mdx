@@ -1,0 +1,589 @@
+---
+title: Debugging Guide
+description: Practical guide to debugging Apache Arrow across different language implementations and build configurations
+---
+
+This guide covers debugging techniques, tools, and best practices for Apache Arrow development across C++, Python, and R implementations.
+
+## Build Configuration for Debugging
+
+Proper build configuration is essential for effective debugging.
+
+<Tabs>
+  <Tab title="C++">
+    ### Debug Build
+
+    Build Arrow C++ in debug mode for better debugging:
+
+    ```bash
+    cd arrow/cpp
+    mkdir build-debug
+    cd build-debug
+    cmake .. \
+      -DCMAKE_BUILD_TYPE=Debug \
+      -DARROW_BUILD_TESTS=ON \
+      -DARROW_EXTRA_ERROR_CONTEXT=ON
+    make -j8
+    ```
+
+    Key options:
+    - `CMAKE_BUILD_TYPE=Debug`: Disables optimizations, enables debug symbols
+    - `ARROW_EXTRA_ERROR_CONTEXT=ON`: Provides additional error context information
+    - Debug builds are slower but essential for debugging
+
+    ### RelWithDebInfo Build
+
+    For debugging with some optimizations:
+
+    ```bash
+    cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    ```
+
+    This provides a middle ground with debug symbols but some optimizations enabled.
+
+    ### Compiler Warning Level
+
+    Set `BUILD_WARNING_LEVEL=CHECKIN` for stricter warnings:
+
+    ```bash
+    cmake .. \
+      -DCMAKE_BUILD_TYPE=Debug \
+      -DBUILD_WARNING_LEVEL=CHECKIN
+    ```
+
+    With gcc/clang, this adds `-Werror` (treat warnings as errors). With MSVC, adds `/WX`.
+  </Tab>
+
+  <Tab title="Python">
+    ### Debug Build for PyArrow
+
+    Build PyArrow in development mode:
+
+    ```bash
+    cd arrow/python
+    
+    # Build with debug symbols
+    export PYARROW_CMAKE_OPTIONS="-DCMAKE_BUILD_TYPE=Debug"
+    export PYARROW_BUILD_TYPE=debug
+    
+    python setup.py build_ext --inplace
+    pip install -e .
+    ```
+
+    ### Enable Python Development Mode
+
+    Python's development mode enables additional runtime checks:
+
+    ```bash
+    python -X dev script.py
+    ```
+
+    Or set the environment variable:
+
+    ```bash
+    export PYTHONDEVMODE=1
+    python script.py
+    ```
+
+    ### Verbose Build Output
+
+    For debugging build issues:
+
+    ```bash
+    export PYARROW_BUILD_VERBOSE=1
+    python setup.py build_ext --inplace
+    ```
+  </Tab>
+
+  <Tab title="R">
+    ### Debug Build for Arrow R Package
+
+    ```bash
+    # Set environment variables for debug build
+    export LIBARROW_MINIMAL=false
+    export ARROW_R_DEV=true
+    
+    cd arrow/r
+    R CMD INSTALL .
+    ```
+
+    ### Enable Verbose Output
+
+    ```r
+    # In R console
+    Sys.setenv(ARROW_R_DEV = "true")
+    ```
+  </Tab>
+</Tabs>
+
+## Debugging Tools
+
+### GDB (GNU Debugger)
+
+GDB is the primary debugger for C++ on Linux.
+
+<Steps>
+  <Step title="Launch program in GDB">
+    ```bash
+    gdb --args ./build-debug/arrow-array-test
+    ```
+  </Step>
+
+  <Step title="Set breakpoints">
+    ```gdb
+    # Break at function
+    (gdb) break arrow::Array::Validate
+    
+    # Break at file:line
+    (gdb) break array.cc:123
+    
+    # Conditional breakpoint
+    (gdb) break array.cc:123 if length > 1000
+    ```
+  </Step>
+
+  <Step title="Run the program">
+    ```gdb
+    (gdb) run
+    ```
+  </Step>
+
+  <Step title="Navigate execution">
+    ```gdb
+    (gdb) next      # Step over
+    (gdb) step      # Step into
+    (gdb) continue  # Continue to next breakpoint
+    (gdb) finish    # Run until function returns
+    ```
+  </Step>
+
+  <Step title="Inspect variables">
+    ```gdb
+    (gdb) print variable_name
+    (gdb) print *pointer
+    (gdb) print array->length()
+    ```
+  </Step>
+
+  <Step title="View backtrace">
+    ```gdb
+    (gdb) backtrace
+    (gdb) bt full  # With local variables
+    ```
+  </Step>
+</Steps>
+
+### LLDB (LLVM Debugger)
+
+LLDB is the primary debugger on macOS and an alternative on Linux.
+
+```bash
+# Launch in LLDB
+lldb -- ./build-debug/arrow-array-test
+
+# Set breakpoint
+(lldb) breakpoint set --name arrow::Array::Validate
+(lldb) b array.cc:123
+
+# Run
+(lldb) run
+
+# Navigate
+(lldb) next
+(lldb) step
+(lldb) continue
+
+# Inspect
+(lldb) print variable_name
+(lldb) frame variable
+
+# Backtrace
+(lldb) bt
+```
+
+### Visual Studio Code
+
+VSCode provides excellent debugging support for Arrow:
+
+<Steps>
+  <Step title="Install C++ extension">
+    Install the "C/C++" extension by Microsoft.
+  </Step>
+
+  <Step title="Create launch configuration">
+    Create `.vscode/launch.json`:
+
+    ```json
+    {
+      "version": "0.2.0",
+      "configurations": [
+        {
+          "name": "Debug Arrow Test",
+          "type": "cppdbg",
+          "request": "launch",
+          "program": "${workspaceFolder}/cpp/build-debug/arrow-array-test",
+          "args": [],
+          "stopAtEntry": false,
+          "cwd": "${workspaceFolder}",
+          "environment": [],
+          "MIMode": "gdb"
+        }
+      ]
+    }
+    ```
+  </Step>
+
+  <Step title="Set breakpoints and debug">
+    Click in the gutter next to line numbers to set breakpoints, then press F5 to start debugging.
+  </Step>
+</Steps>
+
+### Python Debugging
+
+<Tabs>
+  <Tab title="pdb (Python Debugger)">
+    Built-in Python debugger:
+
+    ```python
+    import pyarrow as pa
+    import pdb
+
+    # Set breakpoint
+    pdb.set_trace()
+
+    # Or use breakpoint() in Python 3.7+
+    breakpoint()
+
+    array = pa.array([1, 2, 3])
+    ```
+
+    Common pdb commands:
+    ```
+    n       # Next line
+    s       # Step into
+    c       # Continue
+    l       # List code
+    p var   # Print variable
+    w       # Where (show stack trace)
+    ```
+  </Tab>
+
+  <Tab title="ipdb (IPython Debugger)">
+    Enhanced debugger with IPython features:
+
+    ```bash
+    pip install ipdb
+    ```
+
+    ```python
+    import ipdb
+    ipdb.set_trace()
+    ```
+  </Tab>
+
+  <Tab title="VSCode Python Debugging">
+    Create `.vscode/launch.json`:
+
+    ```json
+    {
+      "version": "0.2.0",
+      "configurations": [
+        {
+          "name": "Python: Current File",
+          "type": "python",
+          "request": "launch",
+          "program": "${file}",
+          "console": "integratedTerminal"
+        },
+        {
+          "name": "Python: PyTest",
+          "type": "python",
+          "request": "launch",
+          "module": "pytest",
+          "args": ["${file}", "-v"]
+        }
+      ]
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Sanitizers
+
+Sanitizers detect various types of bugs at runtime.
+
+### Address Sanitizer (ASan)
+
+Detects memory errors like use-after-free, buffer overflows, and memory leaks.
+
+```bash
+cmake .. \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DARROW_USE_ASAN=ON
+make -j8
+
+# Run tests
+export ASAN_OPTIONS=detect_leaks=1
+./build-debug/arrow-array-test
+```
+
+### Undefined Behavior Sanitizer (UBSan)
+
+Detects undefined behavior like integer overflow, null pointer dereference.
+
+```bash
+cmake .. \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DARROW_USE_UBSAN=ON
+make -j8
+```
+
+### Thread Sanitizer (TSan)
+
+Detects data races and thread-related issues.
+
+```bash
+cmake .. \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DARROW_USE_TSAN=ON
+make -j8
+```
+
+<Warning>
+  Don't combine multiple sanitizers in the same build. They have conflicts and overhead.
+</Warning>
+
+## Common Debugging Scenarios
+
+### Segmentation Faults
+
+<Steps>
+  <Step title="Get a backtrace">
+    ```bash
+    gdb --args ./program
+    (gdb) run
+    # When it crashes:
+    (gdb) backtrace
+    ```
+  </Step>
+
+  <Step title="Enable core dumps">
+    ```bash
+    ulimit -c unlimited
+    ./program
+    # After crash:
+    gdb ./program core
+    (gdb) backtrace
+    ```
+  </Step>
+
+  <Step title="Use AddressSanitizer">
+    Rebuild with ASan and re-run. It often pinpoints the exact error.
+  </Step>
+</Steps>
+
+### Memory Leaks
+
+<Steps>
+  <Step title="Use Valgrind">
+    ```bash
+    valgrind --leak-check=full ./build-debug/arrow-array-test
+    ```
+  </Step>
+
+  <Step title="Use AddressSanitizer">
+    ```bash
+    export ASAN_OPTIONS=detect_leaks=1
+    ./build-debug/arrow-array-test
+    ```
+  </Step>
+</Steps>
+
+### Build Failures
+
+<AccordionGroup>
+  <Accordion title="Clean rebuild">
+    ```bash
+    # C++
+    rm -rf build-debug
+    mkdir build-debug && cd build-debug
+    cmake ..
+    make -j8
+
+    # Python
+    cd arrow/python
+    rm -rf build/
+    python setup.py clean --all
+    python setup.py build_ext --inplace
+    ```
+  </Accordion>
+
+  <Accordion title="Verbose build output">
+    ```bash
+    # CMake
+    make VERBOSE=1
+
+    # Python
+    export PYARROW_BUILD_VERBOSE=1
+    python setup.py build_ext --inplace
+    ```
+  </Accordion>
+
+  <Accordion title="Check dependencies">
+    ```bash
+    # Verify CMake can find dependencies
+    cmake .. -DCMAKE_FIND_DEBUG_MODE=ON
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Test Failures
+
+<AccordionGroup>
+  <Accordion title="Run specific test">
+    ```bash
+    # C++
+    ./build-debug/arrow-array-test --gtest_filter=TestArray.TestBasics
+
+    # Python
+    pytest pyarrow/tests/test_array.py::test_basics -v
+
+    # R
+    devtools::test_active_file()
+    ```
+  </Accordion>
+
+  <Accordion title="Debug test in GDB">
+    ```bash
+    gdb --args ./build-debug/arrow-array-test --gtest_filter=TestArray.TestBasics
+    (gdb) break arrow_array.cc:123
+    (gdb) run
+    ```
+  </Accordion>
+
+  <Accordion title="Increase test verbosity">
+    ```bash
+    # C++
+    ./arrow-array-test --gtest_verbose
+
+    # Python
+    pytest pyarrow/tests/test_array.py -vv -s
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Import Errors (Python)
+
+```python
+import sys
+print(sys.path)
+
+import pyarrow
+print(pyarrow.__file__)
+print(pyarrow.__version__)
+
+# Check if C++ library loads
+import pyarrow._lib
+```
+
+If imports fail:
+
+```bash
+# Ensure you're in the right directory
+cd arrow/python
+
+# Check if built in-place
+ls -la pyarrow/*.so
+
+# Rebuild if needed
+python setup.py build_ext --inplace
+```
+
+## Debugging CI Failures
+
+When tests pass locally but fail in CI:
+
+<Steps>
+  <Step title="Check the CI logs">
+    Look for the specific error message and stack trace in the CI output.
+  </Step>
+
+  <Step title="Reproduce the CI environment">
+    Use Docker to reproduce the exact CI environment:
+
+    ```bash
+    # See dev/docker-compose.yml for available images
+    docker-compose run ubuntu-cpp
+    ```
+  </Step>
+
+  <Step title="Check for platform-specific issues">
+    Test on the same platform where CI failed (Linux, macOS, Windows).
+  </Step>
+
+  <Step title="Review sanitizer reports">
+    CI runs with AddressSanitizer and UndefinedBehaviorSanitizer. Check for sanitizer warnings in logs.
+  </Step>
+</Steps>
+
+## Logging and Error Messages
+
+### C++ Logging
+
+Arrow uses a custom logging system:
+
+```cpp
+#include <arrow/util/logging.h>
+
+ARROW_LOG(INFO) << "Processing array with length: " << array->length();
+ARROW_LOG(WARNING) << "Unexpected null values";
+ARROW_LOG(ERROR) << "Failed to allocate memory";
+```
+
+Control log level:
+
+```bash
+export ARROW_LOG_LEVEL=DEBUG
+./program
+```
+
+### Python Logging
+
+```python
+import logging
+import pyarrow as pa
+
+logging.basicConfig(level=logging.DEBUG)
+pa.set_cpu_count(4)  # Will log CPU count changes
+```
+
+## Performance Debugging
+
+See the [Benchmarking Guide](benchmarking) for:
+- Running performance benchmarks
+- Comparing performance across versions
+- Identifying performance regressions
+
+Additional profiling tools:
+
+- **perf** (Linux): CPU profiling
+- **Instruments** (macOS): System-wide profiling
+- **py-spy** (Python): Python profiling without code changes
+- **valgrind --tool=callgrind**: Call graph profiling
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="GDB Documentation" icon="bug" href="https://sourceware.org/gdb/documentation/">
+    Official GDB documentation
+  </Card>
+  <Card title="LLDB Tutorial" icon="terminal" href="https://lldb.llvm.org/use/tutorial.html">
+    Getting started with LLDB
+  </Card>
+  <Card title="AddressSanitizer" icon="shield-check" href="https://github.com/google/sanitizers/wiki/AddressSanitizer">
+    Address Sanitizer documentation
+  </Card>
+  <Card title="Valgrind Manual" icon="search" href="https://valgrind.org/docs/manual/quick-start.html">
+    Valgrind quick start guide
+  </Card>
+</CardGroup>

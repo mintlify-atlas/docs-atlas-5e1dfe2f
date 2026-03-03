@@ -1,0 +1,547 @@
+---
+title: Compute Functions
+description: Vectorized operations on PyArrow arrays and tables
+---
+
+## Overview
+
+PyArrow's compute module provides vectorized operations for arrays and tables. These functions are implemented in C++ and optimized for performance.
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+# All compute functions are in the pc namespace
+array = pa.array([1, 2, 3, 4, 5])
+result = pc.sum(array)
+print(result)  # <pyarrow.Int64Scalar: 15>
+```
+
+## Arithmetic Operations
+
+<Tabs>
+  <Tab title="Basic Arithmetic">
+    ```python
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    arr1 = pa.array([1, 2, 3, 4, 5])
+    arr2 = pa.array([10, 20, 30, 40, 50])
+
+    # Addition
+    result = pc.add(arr1, arr2)
+    print(result.to_pylist())  # [11, 22, 33, 44, 55]
+
+    # Subtraction
+    result = pc.subtract(arr2, arr1)
+    print(result.to_pylist())  # [9, 18, 27, 36, 45]
+
+    # Multiplication
+    result = pc.multiply(arr1, arr2)
+    print(result.to_pylist())  # [10, 40, 90, 160, 250]
+
+    # Division
+    result = pc.divide(arr2, arr1)
+    print(result.to_pylist())  # [10.0, 10.0, 10.0, 10.0, 10.0]
+    ```
+  </Tab>
+
+  <Tab title="With Scalars">
+    ```python
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    array = pa.array([1, 2, 3, 4, 5])
+
+    # Multiply by scalar
+    result = pc.multiply(array, 10)
+    print(result.to_pylist())  # [10, 20, 30, 40, 50]
+
+    # Add scalar
+    result = pc.add(array, 100)
+    print(result.to_pylist())  # [101, 102, 103, 104, 105]
+    ```
+  </Tab>
+
+  <Tab title="Advanced Math">
+    ```python
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    array = pa.array([1.0, 4.0, 9.0, 16.0])
+
+    # Square root
+    result = pc.sqrt(array)
+    print(result.to_pylist())  # [1.0, 2.0, 3.0, 4.0]
+
+    # Power
+    result = pc.power(array, 2)
+    print(result.to_pylist())  # [1.0, 16.0, 81.0, 256.0]
+
+    # Absolute value
+    arr = pa.array([-1, -2, 3, -4])
+    result = pc.abs(arr)
+    print(result.to_pylist())  # [1, 2, 3, 4]
+
+    # Logarithm
+    arr = pa.array([1.0, 10.0, 100.0, 1000.0])
+    result = pc.ln(arr)  # Natural log
+    result = pc.log10(arr)  # Base 10 log
+    ```
+  </Tab>
+</Tabs>
+
+## Comparison Operations
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+arr1 = pa.array([1, 2, 3, 4, 5])
+arr2 = pa.array([1, 1, 3, 5, 5])
+
+# Equal
+result = pc.equal(arr1, arr2)
+print(result.to_pylist())  # [True, False, True, False, True]
+
+# Not equal
+result = pc.not_equal(arr1, arr2)
+
+# Greater than
+result = pc.greater(arr1, arr2)
+print(result.to_pylist())  # [False, True, False, False, False]
+
+# Greater than or equal
+result = pc.greater_equal(arr1, 3)
+print(result.to_pylist())  # [False, False, True, True, True]
+
+# Less than
+result = pc.less(arr1, arr2)
+
+# Less than or equal
+result = pc.less_equal(arr1, 3)
+print(result.to_pylist())  # [True, True, True, False, False]
+```
+
+## Logical Operations
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+mask1 = pa.array([True, True, False, False])
+mask2 = pa.array([True, False, True, False])
+
+# AND operation
+result = pc.and_(mask1, mask2)
+print(result.to_pylist())  # [True, False, False, False]
+
+# OR operation
+result = pc.or_(mask1, mask2)
+print(result.to_pylist())  # [True, True, True, False]
+
+# NOT operation
+result = pc.invert(mask1)
+print(result.to_pylist())  # [False, False, True, True]
+
+# XOR operation
+result = pc.xor(mask1, mask2)
+print(result.to_pylist())  # [False, True, True, False]
+```
+
+## Aggregate Functions
+
+<Tabs>
+  <Tab title="Statistical">
+    ```python
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    array = pa.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+
+    # Sum
+    result = pc.sum(array)
+    print(result.as_py())  # 55
+
+    # Mean
+    result = pc.mean(array)
+    print(result.as_py())  # 5.5
+
+    # Standard deviation
+    result = pc.stddev(array)
+    print(result.as_py())  # ~2.87
+
+    # Variance
+    result = pc.variance(array)
+    print(result.as_py())  # ~8.25
+
+    # Min and max
+    min_val = pc.min(array)
+    max_val = pc.max(array)
+    print(f"Min: {min_val.as_py()}, Max: {max_val.as_py()}")
+    ```
+  </Tab>
+
+  <Tab title="Counting">
+    ```python
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    array = pa.array([1, None, 3, None, 5])
+
+    # Count all elements
+    result = pc.count(array)
+    print(result.as_py())  # 5
+
+    # Count non-null elements
+    result = pc.count(array, mode='only_valid')
+    print(result.as_py())  # 3
+
+    # Count null elements
+    result = pc.count(array, mode='only_null')
+    print(result.as_py())  # 2
+
+    # Count distinct values
+    arr = pa.array([1, 2, 2, 3, 3, 3])
+    result = pc.count_distinct(arr)
+    print(result.as_py())  # 3
+    ```
+  </Tab>
+
+  <Tab title="Other Aggregates">
+    ```python
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    array = pa.array([1, 2, 3, 4, 5])
+
+    # Product (multiply all elements)
+    result = pc.product(array)
+    print(result.as_py())  # 120
+
+    # All (logical AND)
+    bool_arr = pa.array([True, True, True])
+    result = pc.all(bool_arr)
+    print(result.as_py())  # True
+
+    # Any (logical OR)
+    bool_arr = pa.array([False, False, True])
+    result = pc.any(bool_arr)
+    print(result.as_py())  # True
+
+    # Mode (most frequent value)
+    arr = pa.array([1, 2, 2, 3, 3, 3])
+    result = pc.mode(arr)
+    print(result.to_pylist())  # [3]
+    ```
+  </Tab>
+</Tabs>
+
+## String Operations
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+strings = pa.array(['hello', 'world', 'arrow', 'pyarrow'])
+
+# Length
+lengths = pc.utf8_length(strings)
+print(lengths.to_pylist())  # [5, 5, 5, 7]
+
+# Upper/lower case
+upper = pc.utf8_upper(strings)
+print(upper.to_pylist())  # ['HELLO', 'WORLD', 'ARROW', 'PYARROW']
+
+lower = pc.utf8_lower(strings)
+
+# Substring match
+matches = pc.match_substring(strings, 'arrow')
+print(matches.to_pylist())  # [False, False, True, True]
+
+# Starts with / ends with
+starts = pc.starts_with(strings, 'py')
+print(starts.to_pylist())  # [False, False, False, True]
+
+ends = pc.ends_with(strings, 'ow')
+print(ends.to_pylist())  # [False, False, True, True]
+
+# Replace substring
+replaced = pc.replace_substring(strings, 'arrow', 'ARROW')
+print(replaced.to_pylist())  # ['hello', 'world', 'ARROW', 'pyARROW']
+
+# Split string
+text = pa.array(['a,b,c', 'x,y,z'])
+split = pc.split_pattern(text, ',')
+```
+
+<Tip>
+  String functions are prefixed with `utf8_` because they operate on UTF-8 encoded strings.
+</Tip>
+
+## Array Operations
+
+### Filtering and Selection
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+array = pa.array([1, 2, 3, 4, 5])
+
+# Filter by mask
+mask = pa.array([True, False, True, False, True])
+filtered = pc.filter(array, mask)
+print(filtered.to_pylist())  # [1, 3, 5]
+
+# Take by indices
+indices = pa.array([0, 2, 4])
+taken = pc.take(array, indices)
+print(taken.to_pylist())  # [1, 3, 5]
+
+# Drop null values
+arr_with_nulls = pa.array([1, None, 3, None, 5])
+clean = pc.drop_null(arr_with_nulls)
+print(clean.to_pylist())  # [1, 3, 5]
+```
+
+### Sorting
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+array = pa.array([3, 1, 4, 1, 5, 9, 2, 6])
+
+# Sort array
+sorted_arr = pc.sort_indices(array)
+print(sorted_arr.to_pylist())  # Indices: [1, 3, 6, 0, 2, 4, 7, 5]
+
+# Get sorted values
+sorted_values = pc.take(array, sorted_arr)
+print(sorted_values.to_pylist())  # [1, 1, 2, 3, 4, 5, 6, 9]
+
+# Sort descending
+sorted_desc = pc.sort_indices(array, sort_keys=[('dummy', 'descending')])
+
+# Unique values
+arr = pa.array([1, 2, 2, 3, 3, 3])
+unique = pc.unique(arr)
+print(unique.to_pylist())  # [1, 2, 3]
+
+# Top k elements
+top_k = pc.top_k_unstable(array, k=3)
+print(pc.take(array, top_k).to_pylist())  # [9, 6, 5]
+```
+
+### Filling and Replacing
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+array = pa.array([1, None, 3, None, 5])
+
+# Fill null values
+filled = pc.fill_null(array, 0)
+print(filled.to_pylist())  # [1, 0, 3, 0, 5]
+
+# Fill with previous value (forward fill)
+filled = pc.fill_null_forward(array)
+print(filled.to_pylist())  # [1, 1, 3, 3, 5]
+
+# Fill with next value (backward fill)
+filled = pc.fill_null_backward(array)
+print(filled.to_pylist())  # [1, 3, 3, 5, 5]
+
+# Replace values
+arr = pa.array([1, 2, 3, 2, 1])
+replaced = pc.replace_with_mask(arr, pc.equal(arr, 2), 99)
+print(replaced.to_pylist())  # [1, 99, 3, 99, 1]
+```
+
+## Table Operations
+
+### Filtering Tables
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+table = pa.table({
+    'id': [1, 2, 3, 4, 5],
+    'score': [95, 87, 92, 88, 91],
+    'status': ['pass', 'fail', 'pass', 'fail', 'pass']
+})
+
+# Filter by condition
+mask = pc.greater(table['score'], 90)
+filtered = table.filter(mask)
+print(filtered.to_pandas())
+
+# Multiple conditions
+mask = pc.and_(
+    pc.greater_equal(table['score'], 85),
+    pc.less(table['score'], 95)
+)
+filtered = table.filter(mask)
+
+# Filter by string match
+mask = pc.equal(table['status'], 'pass')
+passed = table.filter(mask)
+```
+
+### Grouping and Aggregation
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+table = pa.table({
+    'category': ['A', 'B', 'A', 'B', 'A'],
+    'value': [10, 20, 30, 40, 50]
+})
+
+# Group by and aggregate
+result = table.group_by('category').aggregate([
+    ('value', 'sum'),
+    ('value', 'mean')
+])
+print(result.to_pandas())
+```
+
+## Type Casting
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+array = pa.array([1, 2, 3, 4, 5])
+
+# Cast to different type
+float_array = pc.cast(array, pa.float64())
+print(float_array.type)  # double
+
+string_array = pc.cast(array, pa.string())
+print(string_array.to_pylist())  # ['1', '2', '3', '4', '5']
+
+# Safe casting (checks for overflows)
+try:
+    pc.cast(pa.array([1000]), pa.int8(), safe=True)
+except pa.ArrowInvalid as e:
+    print("Overflow detected")
+
+# Unsafe casting (faster, no checks)
+result = pc.cast(array, pa.int8(), safe=False)
+```
+
+## Temporal Operations
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+from datetime import datetime
+
+timestamps = pa.array([
+    datetime(2024, 1, 15, 10, 30, 0),
+    datetime(2024, 3, 20, 15, 45, 30),
+    datetime(2024, 6, 10, 8, 0, 0)
+], type=pa.timestamp('us'))
+
+# Extract components
+years = pc.year(timestamps)
+print(years.to_pylist())  # [2024, 2024, 2024]
+
+months = pc.month(timestamps)
+print(months.to_pylist())  # [1, 3, 6]
+
+days = pc.day(timestamps)
+hours = pc.hour(timestamps)
+minutes = pc.minute(timestamps)
+
+# Day of week (0 = Monday)
+day_of_week = pc.day_of_week(timestamps)
+
+# Format as string
+formatted = pc.strftime(timestamps, format='%Y-%m-%d')
+print(formatted.to_pylist())  # ['2024-01-15', '2024-03-20', '2024-06-10']
+
+# Round to nearest unit
+rounded = pc.round_temporal(timestamps, 1, unit='hour')
+```
+
+## Custom Expressions
+
+Combine compute functions into complex expressions:
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+from pyarrow import compute as pc
+
+table = pa.table({
+    'a': [1, 2, 3, 4, 5],
+    'b': [10, 20, 30, 40, 50],
+    'c': [100, 200, 300, 400, 500]
+})
+
+# Create expression: (a + b) * c
+expr = pc.multiply(
+    pc.add(pc.field('a'), pc.field('b')),
+    pc.field('c')
+)
+
+# This is used primarily with the Dataset API
+# for pushdown filtering and projection
+```
+
+## Performance Tips
+
+<Note>
+  **Vectorization Benefits:**
+  - Compute functions are implemented in C++ for maximum performance
+  - Operations are vectorized using SIMD instructions when available
+  - Avoid Python loops; use compute functions instead
+</Note>
+
+### Efficient Patterns
+
+```python
+import pyarrow as pa
+import pyarrow.compute as pc
+
+array = pa.array(range(1000000))
+
+# Good: Vectorized operation
+result = pc.multiply(array, 2)
+
+# Bad: Python loop (much slower)
+result = pa.array([x * 2 for x in array.to_pylist()])
+
+# Good: Chained compute functions
+result = pc.sum(pc.filter(pc.multiply(array, 2), pc.greater(array, 1000)))
+```
+
+## Function Reference
+
+List all available compute functions:
+
+```python
+import pyarrow.compute as pc
+
+# Get list of all functions
+functions = pc.list_functions()
+print(f"Total functions: {len(functions)}")
+
+# Get function details
+func = pc.get_function('add')
+print(f"Function: {func.name}")
+print(f"Arity: {func.arity}")
+print(f"Kind: {func.kind}")
+```
+
+## Next Steps
+
+- [Dataset API](/python/dataset) - Apply compute functions to multi-file datasets
+- [Parquet Files](/python/parquet) - Use compute functions with Parquet data
+- [Tables and Arrays](/python/tables-arrays) - Data structures for compute operations

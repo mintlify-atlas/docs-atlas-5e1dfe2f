@@ -1,0 +1,489 @@
+---
+title: "Reading and Writing Files"
+description: "Efficiently read and write Parquet, CSV, Feather, and JSON files with the arrow R package"
+---
+
+The arrow package provides high-performance functions for reading and writing data files in multiple formats. By default, these functions return R data frames, but they can also work with Arrow Tables for better performance in subsequent operations.
+
+## Supported Formats
+
+Arrow supports reading and writing several file formats:
+
+| Format | Read Function | Write Function | Best For |
+|--------|--------------|----------------|----------|
+| Parquet | `read_parquet()` | `write_parquet()` | Analytics, long-term storage |
+| Feather/Arrow | `read_feather()` | `write_feather()` | Fast I/O, R/Python interchange |
+| CSV | `read_csv_arrow()` | `write_csv_arrow()` | Interoperability, human-readable |
+| TSV | `read_tsv_arrow()` | - | Tab-separated data |
+| Delimited | `read_delim_arrow()` | - | Custom delimiters |
+| JSON | `read_json_arrow()` | - | Line-delimited JSON |
+
+## Parquet Format
+
+Parquet is a columnar storage format optimized for analytics workloads. It offers excellent compression and fast read performance.
+
+### Writing Parquet Files
+
+```r
+library(arrow, warn.conflicts = FALSE)
+library(dplyr, warn.conflicts = FALSE)
+
+file_path <- tempfile(fileext = ".parquet")
+write_parquet(starwars, file_path)
+```
+
+**Compression Options:**
+
+```r
+# Snappy compression (default) - balanced speed and size
+write_parquet(starwars, "data.parquet", compression = "snappy")
+
+# Gzip compression - smaller files, slower
+write_parquet(starwars, "data.parquet", compression = "gzip")
+
+# No compression - fastest write, largest files
+write_parquet(starwars, "data.parquet", compression = "uncompressed")
+
+# Zstd compression - excellent compression ratio
+write_parquet(starwars, "data.parquet", compression = "zstd")
+```
+
+### Reading Parquet Files
+
+```r
+# Read as data frame (default)
+df <- read_parquet(file_path)
+df
+#> # A tibble: 87 × 14
+#>    name           height  mass hair_color skin_color eye_color
+#>    <chr>           <int> <dbl> <chr>      <chr>      <chr>
+#>  1 Luke Skywalker    172    77 blond      fair       blue
+
+# Read as Arrow Table
+tbl <- read_parquet(file_path, as_data_frame = FALSE)
+tbl
+#> Table
+#> 87 rows x 14 columns
+```
+
+<Tip>
+Reading as an Arrow Table (`as_data_frame = FALSE`) is faster and uses less memory if you plan to do further Arrow/dplyr operations before converting to a data frame.
+</Tip>
+
+### Selective Column Reading
+
+Parquet files store metadata that allows reading only specific columns:
+
+```r
+# Read only selected columns
+read_parquet(file_path, col_select = c("name", "height", "mass"))
+#> # A tibble: 87 × 3
+#>    name               height  mass
+#>    <chr>               <int> <dbl>
+#>  1 Luke Skywalker        172    77
+#>  2 C-3PO                 167    75
+#>  3 R2-D2                  96    32
+
+# Use tidyselect helpers
+read_parquet(file_path, col_select = starts_with("h"))
+```
+
+This is much faster than reading the full file and selecting columns afterwards.
+
+### Advanced Parquet Options
+
+Fine-tune the Parquet reader with `props`:
+
+```r
+props <- ParquetArrowReaderProperties$create(
+  use_threads = TRUE,
+  cache_options = CacheOptions$default()
+)
+
+read_parquet(file_path, props = props)
+```
+
+## Arrow/Feather Format
+
+The Arrow IPC file format (also called Feather v2) is designed for fast reading and writing, especially between Arrow-compatible systems.
+
+### Writing Feather Files
+
+```r
+file_path <- tempfile(fileext = ".arrow")
+write_feather(starwars, file_path)
+
+# With compression
+write_feather(starwars, file_path, compression = "lz4")
+write_feather(starwars, file_path, compression = "zstd")
+```
+
+### Reading Feather Files
+
+```r
+# Read as data frame
+df <- read_feather(file_path)
+
+# Read as Arrow Table with selected columns
+tbl <- read_feather(
+  file = file_path,
+  col_select = c("name", "height", "mass"),
+  as_data_frame = FALSE
+)
+```
+
+### When to Use Feather
+
+**Use Feather when:**
+- You need maximum I/O speed
+- Exchanging data between R and Python
+- Working with temporary files in a pipeline
+- You have fast storage and don't need compression
+
+**Use Parquet when:**
+- Long-term data storage
+- Minimizing storage costs
+- Sharing data with other analytics tools
+- Working with very large datasets
+
+## CSV Format
+
+Arrow provides fast CSV reading and writing using the Arrow C++ CSV parser.
+
+### Writing CSV Files
+
+```r
+file_path <- tempfile(fileext = ".csv")
+write_csv_arrow(mtcars, file_path)
+```
+
+### Reading CSV Files
+
+```r
+# Basic reading
+df <- read_csv_arrow(file_path)
+
+# Select specific columns
+df <- read_csv_arrow(file_path, col_select = starts_with("d"))
+#> # A tibble: 32 × 2
+#>     disp  drat
+#>    <dbl> <dbl>
+#>  1  160   3.90
+#>  2  160   3.90
+```
+
+### CSV Parsing Options
+
+The CSV reader supports many options similar to readr:
+
+```r
+read_csv_arrow(
+  file_path,
+  delim = ",",
+  quote = "\"",
+  escape_double = TRUE,
+  escape_backslash = FALSE,
+  col_names = TRUE,
+  skip = 0,
+  skip_empty_rows = TRUE,
+  na = c("", "NA")
+)
+```
+
+### Specifying Column Types
+
+Use `col_types` or `schema` to specify data types:
+
+```r
+# Using col_types (readr style)
+read_csv_arrow(
+  file_path,
+  col_types = "dddcc",  # double, double, double, character, character
+  col_names = c("col1", "col2", "col3", "col4", "col5")
+)
+
+# Using Arrow schema
+read_csv_arrow(
+  file_path,
+  schema = schema(
+    name = utf8(),
+    age = int32(),
+    height = float64(),
+    active = boolean()
+  )
+)
+```
+
+### Advanced CSV Options
+
+For fine-grained control, use the options objects:
+
+```r
+read_csv_arrow(
+  file_path,
+  parse_options = CsvParseOptions$create(
+    delimiter = "|",
+    quote_char = "'",
+    newlines_in_values = TRUE
+  ),
+  convert_options = CsvConvertOptions$create(
+    check_utf8 = TRUE,
+    strings_can_be_null = TRUE
+  ),
+  read_options = CsvReadOptions$create(
+    use_threads = TRUE,
+    block_size = 1048576
+  )
+)
+```
+
+## TSV and Custom Delimiters
+
+```r
+# Tab-separated values
+df <- read_tsv_arrow("data.tsv")
+
+# Custom delimiter
+df <- read_delim_arrow("data.txt", delim = "|")
+```
+
+## JSON Format
+
+Arrow can read line-delimited JSON files:
+
+```r
+file_path <- tempfile(fileext = ".json")
+writeLines('
+  { "hello": 3.5, "world": false, "yo": "thing" }
+  { "hello": 3.25, "world": null }
+  { "hello": 0.0, "world": true, "yo": null }
+', file_path, useBytes = TRUE)
+
+read_json_arrow(file_path)
+#> # A tibble: 3 × 3
+#>   hello world yo
+#>   <dbl> <lgl> <chr>
+#> 1  3.5  FALSE thing
+#> 2  3.25 NA    <NA>
+#> 3  0    TRUE  <NA>
+```
+
+<Note>
+Arrow only supports line-delimited JSON (NDJSON), where each line is a complete JSON object. Standard JSON arrays are not supported.
+</Note>
+
+## Cloud Storage
+
+All read/write functions work with cloud storage paths:
+
+### Amazon S3
+
+```r
+library(arrow)
+
+# Write to S3
+write_parquet(mtcars, "s3://my-bucket/data/mtcars.parquet")
+
+# Read from S3
+df <- read_parquet("s3://my-bucket/data/mtcars.parquet")
+
+# Configure S3 options
+Sys.setenv(
+  AWS_ACCESS_KEY_ID = "your-access-key",
+  AWS_SECRET_ACCESS_KEY = "your-secret-key",
+  AWS_REGION = "us-east-1"
+)
+```
+
+### Google Cloud Storage
+
+```r
+# Write to GCS
+write_parquet(mtcars, "gs://my-bucket/data/mtcars.parquet")
+
+# Read from GCS  
+df <- read_parquet("gs://my-bucket/data/mtcars.parquet")
+```
+
+<Tip>
+For more information about cloud storage configuration, see the [cloud storage article](https://arrow.apache.org/docs/r/articles/fs.html).
+</Tip>
+
+## Metadata Preservation
+
+Arrow preserves R object attributes when writing to Parquet or Feather:
+
+```r
+# Data with attributes
+df <- data.frame(x = 1:3, y = 4:6)
+attr(df, "description") <- "My dataset"
+attr(df$x, "label") <- "X variable"
+
+# Write and read back
+file_path <- tempfile(fileext = ".parquet")
+write_parquet(df, file_path)
+df2 <- read_parquet(file_path)
+
+# Attributes are preserved
+attr(df2, "description")
+#> [1] "My dataset"
+attr(df2$x, "label")
+#> [1] "X variable"
+```
+
+This enables round-trip preservation of:
+- `sf` spatial objects
+- `haven::labelled` columns
+- Custom attributes
+- Factor levels
+
+## Performance Comparison
+
+Comparing read/write performance:
+
+```r
+library(bench)
+
+# Create test data
+large_df <- data.frame(
+  id = 1:1e6,
+  value = rnorm(1e6),
+  category = sample(letters[1:10], 1e6, replace = TRUE),
+  timestamp = Sys.time() + 1:1e6
+)
+
+# Benchmark writes
+bench::mark(
+  parquet = write_parquet(large_df, tempfile()),
+  feather = write_feather(large_df, tempfile()),
+  csv = write_csv_arrow(large_df, tempfile()),
+  check = FALSE,
+  iterations = 5
+)
+#>   expression    min median  itr/sec mem_alloc
+#> 1 parquet    250ms  260ms     3.85    45.2MB
+#> 2 feather     85ms   90ms    11.1     38.1MB
+#> 3 csv        180ms  190ms     5.26    61.3MB
+```
+
+Typical performance characteristics:
+- **Feather**: Fastest I/O, moderate file size
+- **Parquet**: Good I/O speed, smallest file size
+- **CSV**: Slowest I/O, human-readable, largest file size
+
+## Best Practices
+
+### 1. Choose the Right Format
+
+```r
+# For long-term storage
+write_parquet(data, "archive/data.parquet", compression = "zstd")
+
+# For temporary files in a pipeline
+write_feather(data, "temp/data.arrow", compression = "lz4")
+
+# For sharing with non-Arrow tools
+write_csv_arrow(data, "export/data.csv")
+```
+
+### 2. Use Arrow Tables for Pipelines
+
+```r
+# Good: Stay in Arrow format
+result <- read_parquet("input.parquet", as_data_frame = FALSE) |>
+  filter(value > 100) |>
+  mutate(new_col = value * 2) |>
+  collect()
+
+# Less efficient: Multiple conversions
+result <- read_parquet("input.parquet") |>  # Converts to data frame
+  filter(value > 100) |>                    # Works on data frame
+  mutate(new_col = value * 2)
+```
+
+### 3. Read Only What You Need
+
+```r
+# Efficient: Read specific columns
+df <- read_parquet("large_file.parquet", col_select = c("id", "value"))
+
+# Inefficient: Read everything then select
+df <- read_parquet("large_file.parquet") |>
+  select(id, value)
+```
+
+### 4. Handle Large Files
+
+```r
+# For files too large for memory, use datasets
+ds <- open_dataset("large_file.parquet")
+
+result <- ds |>
+  filter(date >= "2024-01-01") |>
+  select(id, value, date) |>
+  group_by(date) |>
+  summarize(total = sum(value)) |>
+  collect()
+```
+
+## Real-World Example
+
+Complete workflow with multiple formats:
+
+```r
+library(arrow)
+library(dplyr)
+
+# 1. Read raw CSV data
+raw_data <- read_csv_arrow("raw_data.csv", 
+  col_select = c("date", "user_id", "amount", "category")
+)
+
+# 2. Process with Arrow
+processed <- arrow_table(raw_data) |>
+  filter(!is.na(amount), amount > 0) |>
+  mutate(
+    year = year(date),
+    month = month(date)
+  ) |>
+  collect()
+
+# 3. Save processed data in Parquet for long-term storage
+write_parquet(
+  processed,
+  "processed_data.parquet",
+  compression = "zstd",
+  compression_level = 5
+)
+
+# 4. Create fast-access copy in Feather for daily use
+write_feather(
+  processed,
+  "processed_data.arrow",
+  compression = "lz4"
+)
+
+# 5. Export summary to CSV for sharing
+summary_data <- processed |>
+  group_by(category, year) |>
+  summarize(total_amount = sum(amount), n = n())
+
+write_csv_arrow(summary_data, "summary.csv")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Datasets" icon="database" href="/r/dataset">
+    Work with multi-file and larger-than-memory data
+  </Card>
+  <Card title="Data Wrangling" icon="code" href="/r/data-wrangling">
+    Analyze data with dplyr syntax
+  </Card>
+</CardGroup>
+
+## Additional Resources
+
+- [Arrow R Cookbook - Reading and Writing](https://arrow.apache.org/cookbook/r/reading-and-writing-data---single-files.html)
+- [Cloud Storage Guide](https://arrow.apache.org/docs/r/articles/fs.html)
+- [Metadata and Schema](https://arrow.apache.org/docs/r/articles/metadata.html)

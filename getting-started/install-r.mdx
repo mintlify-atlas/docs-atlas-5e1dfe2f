@@ -1,0 +1,389 @@
+---
+title: Installing R Library
+description: Install the arrow package for R to access Apache Arrow's high-performance data processing capabilities
+---
+
+The `arrow` package for R provides access to Apache Arrow's C++ library, enabling fast data processing, dplyr integration, and support for various data formats including Parquet and Arrow IPC.
+
+## Quick Install
+
+Install the latest release from CRAN:
+
+```r
+install.packages("arrow")
+```
+
+This works on Windows, macOS, and most Linux distributions without requiring additional system dependencies.
+
+## Installation Methods
+
+### From CRAN (Recommended)
+
+The simplest method for most users:
+
+<Steps>
+
+<Step title="Install from CRAN">
+```r
+install.packages("arrow")
+```
+
+This installs pre-compiled binaries on Windows and macOS, and attempts to install from source with automatic dependency resolution on Linux.
+</Step>
+
+<Step title="Load the package">
+```r
+library(arrow)
+```
+</Step>
+
+<Step title="Check installation">
+```r
+arrow_info()
+```
+
+This displays information about your Arrow installation, including version and available features.
+</Step>
+
+</Steps>
+
+### From R-universe
+
+R-universe provides pre-compiled binaries for the most common operating systems:
+
+```r
+install.packages(
+  "arrow", 
+  repos = c("https://apache.r-universe.dev", "https://cloud.r-project.org")
+)
+```
+
+<Note>
+**Linux users**: Consult the [R-universe documentation](https://docs.r-universe.dev/install/binaries.html) for guidance on binary availability and repository configuration for your distribution.
+</Note>
+
+### From conda-forge
+
+If you're using conda for environment management:
+
+```bash
+conda install -c conda-forge --strict-channel-priority r-arrow
+```
+
+The `--strict-channel-priority` flag ensures all dependencies come from conda-forge for consistency.
+
+## Platform-Specific Considerations
+
+### macOS
+
+<Warning>
+**Architecture Compatibility**: On macOS, the R version must match your processor architecture:
+
+- **Apple Silicon (M1/M2/M3)**: Use R compiled for ARM64
+- **Intel processors**: Use R compiled for x86_64
+
+Using Intel-compiled R on Apple Silicon Macs (even via Rosetta) will result in segfaults and crashes.
+</Warning>
+
+<Steps>
+
+<Step title="Check your R architecture">
+```r
+R.version$arch
+```
+
+Should show `aarch64` for Apple Silicon or `x86_64` for Intel.
+</Step>
+
+<Step title="Install arrow">
+```r
+install.packages("arrow")
+```
+</Step>
+
+<Step title="Verify installation">
+```r
+library(arrow)
+arrow_info()
+```
+</Step>
+
+</Steps>
+
+### Linux
+
+On Linux, CRAN does not provide pre-compiled binaries, so the package is built from source. The installation process attempts to automatically handle dependencies.
+
+<Note>
+For detailed Linux installation guidance, including distribution-specific instructions, see the [official installation guide](https://arrow.apache.org/docs/r/articles/install.html).
+</Note>
+
+#### Ubuntu/Debian
+
+For a smoother installation experience, you can pre-install system dependencies:
+
+```bash
+# Install system dependencies
+sudo apt update
+sudo apt install -y \
+  libcurl4-openssl-dev \
+  libssl-dev \
+  libxml2-dev
+
+# Then install arrow in R
+```
+
+```r
+install.packages("arrow")
+```
+
+#### RHEL/CentOS/Rocky Linux
+
+```bash
+# Install system dependencies
+sudo yum install -y \
+  libcurl-devel \
+  openssl-devel \
+  libxml2-devel
+```
+
+```r
+install.packages("arrow")
+```
+
+### Windows
+
+Windows users can simply install from CRAN:
+
+```r
+install.packages("arrow")
+```
+
+<Note>
+**Compiler Requirement**: As of arrow 23.0.0, building from source requires C++20 support. On Windows, this means R 4.3 or later is required. R 4.2 has incomplete C++20 support and may work with special configuration.
+</Note>
+
+## Compiler Requirements
+
+<Warning>
+As of version 23.0.0, arrow requires C++20 to build from source. This has important implications:
+
+- **Windows**: R 4.3+ required (R 4.2 has limited support)
+- **Linux**: Modern GCC (11+) or Clang (12+) required
+- **macOS**: Xcode 13+ or Command Line Tools with equivalent version
+
+Pre-built binaries bypass these requirements.
+</Warning>
+
+## Verifying Your Installation
+
+After installation, verify that arrow is working correctly:
+
+<Steps>
+
+<Step title="Load the library">
+```r
+library(arrow)
+```
+</Step>
+
+<Step title="Check Arrow info">
+```r
+arrow_info()
+```
+
+This displays:
+- Arrow version
+- Available features (Parquet, Dataset, S3, etc.)
+- Build configuration
+</Step>
+
+<Step title="Test basic functionality">
+```r
+# Create a simple table
+df <- data.frame(
+  name = c("Alice", "Bob", "Charlie"),
+  age = c(25, 30, 35)
+)
+
+# Convert to Arrow table
+tbl <- arrow_table(df)
+print(tbl)
+
+# Write to Parquet
+write_parquet(df, "test.parquet")
+
+# Read back
+df2 <- read_parquet("test.parquet")
+print(df2)
+```
+</Step>
+
+</Steps>
+
+## Common Use Cases
+
+### Reading and Writing Parquet Files
+
+```r
+library(arrow)
+library(dplyr)
+
+# Write data to Parquet
+mtcars %>%
+  write_parquet("mtcars.parquet")
+
+# Read Parquet file
+df <- read_parquet("mtcars.parquet")
+
+# Read with filtering (pushed down to Arrow)
+df_filtered <- read_parquet(
+  "mtcars.parquet",
+  col_select = c(mpg, cyl, hp),
+  as_data_frame = TRUE
+)
+```
+
+### Working with Large Datasets
+
+```r
+library(arrow)
+library(dplyr)
+
+# Open a dataset (doesn't load into memory)
+ds <- open_dataset("path/to/parquet/files/")
+
+# Query using dplyr (executed in Arrow)
+result <- ds %>%
+  filter(year == 2023) %>%
+  select(name, value) %>%
+  group_by(name) %>%
+  summarise(total = sum(value)) %>%
+  collect()  # Only collect() loads data into R
+```
+
+### Using dplyr with Arrow
+
+```r
+library(arrow)
+library(dplyr)
+
+# Create Arrow table
+tbl <- arrow_table(mtcars)
+
+# Use dplyr verbs (computed in Arrow)
+result <- tbl %>%
+  filter(mpg > 20) %>%
+  select(mpg, cyl, hp) %>%
+  mutate(kpl = mpg * 0.425144) %>%
+  arrange(desc(mpg)) %>%
+  collect()  # Convert back to data.frame
+```
+
+### Reading from CSV
+
+```r
+library(arrow)
+
+# Read CSV with Arrow (fast!)
+df <- read_csv_arrow("large_file.csv")
+
+# Or open as dataset for larger-than-memory files
+ds <- open_dataset(
+  "large_file.csv",
+  format = "csv"
+)
+```
+
+## Installing Nightly Builds
+
+For the latest development features:
+
+```r
+install.packages(
+  "arrow",
+  repos = c("https://nightlies.apache.org/arrow/r", "https://cloud.r-project.org")
+)
+```
+
+<Warning>
+Nightly builds are development versions and may contain bugs. Use stable releases for production environments.
+</Warning>
+
+For more information, see the [installing nightly builds guide](https://arrow.apache.org/docs/r/articles/install_nightly.html).
+
+## Troubleshooting
+
+<AccordionGroup>
+
+<Accordion title="Installation fails on Linux">
+Ensure system dependencies are installed:
+
+```bash
+# Ubuntu/Debian
+sudo apt install -y libcurl4-openssl-dev libssl-dev libxml2-dev
+
+# RHEL/CentOS
+sudo yum install -y libcurl-devel openssl-devel libxml2-devel
+```
+
+Then retry the installation in R. See the [installation details](https://arrow.apache.org/docs/r/articles/developers/install_details.html) for more help.
+</Accordion>
+
+<Accordion title="Segfaults on Apple Silicon Mac">
+This usually indicates an architecture mismatch:
+
+1. Check your R architecture: `R.version$arch`
+2. Should be `aarch64` for M1/M2/M3 Macs
+3. If showing `x86_64`, download ARM64 R from [CRAN](https://cran.r-project.org/bin/macosx/)
+4. Reinstall arrow after switching R versions
+</Accordion>
+
+<Accordion title="Features missing (e.g., no S3 support)">
+Check which features are available:
+
+```r
+arrow_info()
+```
+
+If features are missing:
+- Try installing from R-universe or conda-forge instead of CRAN
+- CRAN builds include S3 but not GCS support
+- See the [cloud storage article](https://arrow.apache.org/docs/r/articles/fs.html) for details
+</Accordion>
+
+<Accordion title="C++20 compiler errors on Windows">
+You need R 4.3 or later:
+
+1. Update R to version 4.3+
+2. Or install pre-built binaries from R-universe
+3. See [installation details](https://arrow.apache.org/docs/r/articles/developers/install_details.html)
+</Accordion>
+
+</AccordionGroup>
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Arrow for R Documentation" icon="book" href="https://arrow.apache.org/docs/r/">
+    Complete R package documentation
+  </Card>
+  <Card title="R Cookbook" icon="book-open" href="https://arrow.apache.org/cookbook/r/index.html">
+    Practical recipes for common tasks
+  </Card>
+  <Card title="Scaling Up with R and Arrow" icon="chart-line" href="https://arrowrbook.com">
+    Free online book
+  </Card>
+  <Card title="Cheatsheet" icon="file" href="https://github.com/apache/arrow/blob/-/r/cheatsheet/arrow-cheatsheet.pdf">
+    Quick reference guide
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+Now that you have arrow installed:
+
+- Learn about [reading and writing files](https://arrow.apache.org/docs/r/articles/read_write.html)
+- Explore [data wrangling with dplyr](https://arrow.apache.org/docs/r/articles/data_wrangling.html)
+- Check out [supported dplyr functions](https://arrow.apache.org/docs/r/reference/acero.html)
+- Try the [R4DS Arrow chapter](https://r4ds.hadley.nz/arrow)

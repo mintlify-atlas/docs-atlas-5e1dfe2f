@@ -1,0 +1,464 @@
+---
+title: Filesystem Abstraction
+description: API reference for Apache Arrow C++ filesystem abstraction
+---
+
+# Filesystem Abstraction
+
+Arrow provides an abstract filesystem interface that works with local files, HDFS, S3, and other storage systems.
+
+## FileSystem
+
+Abstract filesystem API.
+
+```cpp
+class FileSystem
+```
+
+### Properties
+
+<ResponseField name="type_name" type="std::string">
+  Returns the filesystem type name (e.g., "local", "s3", "hdfs")
+</ResponseField>
+
+<ResponseField name="io_context" type="const io::IOContext&">
+  Returns the IOContext associated with this filesystem
+</ResponseField>
+
+<ResponseField name="Equals" type="bool">
+  <ParamField path="other" type="const FileSystem&" required>
+    Filesystem to compare with
+  </ParamField>
+  
+  Returns whether two filesystems are equal
+</ResponseField>
+
+### Path Operations
+
+<ResponseField name="NormalizePath" type="Result<std::string>">
+  <ParamField path="path" type="std::string" required>
+    Path to normalize
+  </ParamField>
+  
+  Normalizes path for the given filesystem. Default implementation is a no-op, but subclasses may normalize irregular path forms
+</ResponseField>
+
+<ResponseField name="PathFromUri" type="Result<std::string>">
+  <ParamField path="uri_string" type="const std::string&" required>
+    URI or absolute path
+  </ParamField>
+  
+  Ensures a URI is compatible with the filesystem and returns the path component. Checks URI scheme validity
+</ResponseField>
+
+<ResponseField name="MakeUri" type="Result<std::string>">
+  <ParamField path="path" type="std::string" required>
+    Absolute path
+  </ParamField>
+  
+  Makes a URI from which FileSystemFromUri produces an equivalent filesystem
+</ResponseField>
+
+### File Information
+
+<ResponseField name="GetFileInfo" type="Result<FileInfo>">
+  <ParamField path="path" type="const std::string&" required>
+    Path to query
+  </ParamField>
+  
+  Gets info for the given target. Symlinks are automatically dereferenced. Returns FileType::NotFound for nonexistent files without error
+</ResponseField>
+
+<ResponseField name="GetFileInfo" type="Result<FileInfoVector>">
+  <ParamField path="paths" type="const std::vector<std::string>&" required>
+    Paths to query
+  </ParamField>
+  
+  Gets info for many targets at once
+</ResponseField>
+
+<ResponseField name="GetFileInfo" type="Result<FileInfoVector>">
+  <ParamField path="select" type="const FileSelector&" required>
+    File selector
+  </ParamField>
+  
+  Gets info according to a selector. The selector's base directory is not included in results
+</ResponseField>
+
+<ResponseField name="GetFileInfoAsync" type="Future<FileInfoVector>">
+  <ParamField path="paths" type="const std::vector<std::string>&" required>
+    Paths to query
+  </ParamField>
+  
+  Async version of GetFileInfo
+</ResponseField>
+
+<ResponseField name="GetFileInfoGenerator" type="FileInfoGenerator">
+  <ParamField path="select" type="const FileSelector&" required>
+    File selector
+  </ParamField>
+  
+  Streaming async version of GetFileInfo. The generator is not async-reentrant
+</ResponseField>
+
+### Directory Operations
+
+<ResponseField name="CreateDir" type="Status">
+  <ParamField path="path" type="const std::string&" required>
+    Directory path to create
+  </ParamField>
+  <ParamField path="recursive" type="bool" required>
+    Whether to create parent directories
+  </ParamField>
+  
+  Creates a directory and subdirectories. Succeeds if the directory already exists
+</ResponseField>
+
+<ResponseField name="DeleteDir" type="Status">
+  <ParamField path="path" type="const std::string&" required>
+    Directory path to delete
+  </ParamField>
+  
+  Deletes a directory and its contents, recursively
+</ResponseField>
+
+<ResponseField name="DeleteDirContents" type="Status">
+  <ParamField path="path" type="const std::string&" required>
+    Directory path
+  </ParamField>
+  <ParamField path="missing_dir_ok" type="bool" required>
+    Whether to allow missing directory
+  </ParamField>
+  
+  Deletes a directory's contents recursively, but not the directory itself. Empty path is disallowed
+</ResponseField>
+
+<ResponseField name="DeleteDirContentsAsync" type="Future<>">
+  <ParamField path="path" type="const std::string&" required>
+    Directory path
+  </ParamField>
+  <ParamField path="missing_dir_ok" type="bool" required>
+    Whether to allow missing directory
+  </ParamField>
+  
+  Async version of DeleteDirContents
+</ResponseField>
+
+<ResponseField name="DeleteRootDirContents" type="Status">
+  Deletes the root directory's contents recursively. Implementations may raise an error if too dangerous
+</ResponseField>
+
+### File Operations
+
+<ResponseField name="DeleteFile" type="Status">
+  <ParamField path="path" type="const std::string&" required>
+    File path to delete
+  </ParamField>
+  
+  Deletes a file
+</ResponseField>
+
+<ResponseField name="DeleteFiles" type="Status">
+  <ParamField path="paths" type="const std::vector<std::string>&" required>
+    File paths to delete
+  </ParamField>
+  
+  Deletes many files. Default implementation issues individual operations in sequence
+</ResponseField>
+
+<ResponseField name="Move" type="Status">
+  <ParamField path="src" type="const std::string&" required>
+    Source path
+  </ParamField>
+  <ParamField path="dest" type="const std::string&" required>
+    Destination path
+  </ParamField>
+  
+  Moves or renames a file or directory. If destination is a non-empty directory, returns error
+</ResponseField>
+
+<ResponseField name="CopyFile" type="Status">
+  <ParamField path="src" type="const std::string&" required>
+    Source path
+  </ParamField>
+  <ParamField path="dest" type="const std::string&" required>
+    Destination path
+  </ParamField>
+  
+  Copies a file. If destination exists and is a directory, returns error. Otherwise replaces it
+</ResponseField>
+
+### Stream Operations
+
+<ResponseField name="OpenInputStream" type="Result<std::shared_ptr<io::InputStream>>">
+  <ParamField path="path" type="const std::string&" required>
+    File path to open
+  </ParamField>
+  
+  Opens an input stream for sequential reading
+</ResponseField>
+
+<ResponseField name="OpenInputFile" type="Result<std::shared_ptr<io::RandomAccessFile>>">
+  <ParamField path="path" type="const std::string&" required>
+    File path to open
+  </ParamField>
+  
+  Opens an input file for random access reading
+</ResponseField>
+
+<ResponseField name="OpenInputStreamAsync" type="Future<std::shared_ptr<io::InputStream>>">
+  <ParamField path="path" type="const std::string&" required>
+    File path to open
+  </ParamField>
+  
+  Async version of OpenInputStream
+</ResponseField>
+
+<ResponseField name="OpenInputFileAsync" type="Future<std::shared_ptr<io::RandomAccessFile>>">
+  <ParamField path="path" type="const std::string&" required>
+    File path to open
+  </ParamField>
+  
+  Async version of OpenInputFile
+</ResponseField>
+
+<ResponseField name="OpenOutputStream" type="Result<std::shared_ptr<io::OutputStream>>">
+  <ParamField path="path" type="const std::string&" required>
+    File path to open
+  </ParamField>
+  <ParamField path="metadata" type="const std::shared_ptr<const KeyValueMetadata>&" required>
+    Optional metadata to attach
+  </ParamField>
+  
+  Opens an output stream for sequential writing. If target exists, existing data is truncated
+</ResponseField>
+
+<ResponseField name="OpenAppendStream" type="Result<std::shared_ptr<io::OutputStream>>">
+  <ParamField path="path" type="const std::string&" required>
+    File path to open
+  </ParamField>
+  <ParamField path="metadata" type="const std::shared_ptr<const KeyValueMetadata>&" required>
+    Optional metadata to attach
+  </ParamField>
+  
+  Opens an output stream for appending. Creates new empty file if it doesn't exist. May return NotImplemented on some filesystems
+</ResponseField>
+
+---
+
+## FileInfo
+
+FileSystem entry information.
+
+```cpp
+struct FileInfo
+```
+
+<ResponseField name="FileInfo" type="">
+  <ParamField path="path" type="std::string" required>
+    Full file path
+  </ParamField>
+  <ParamField path="type" type="FileType">
+    File type (default: Unknown)
+  </ParamField>
+  
+  Constructs a FileInfo
+</ResponseField>
+
+<ResponseField name="type" type="FileType">
+  Returns the file type (File, Directory, or Unknown)
+</ResponseField>
+
+<ResponseField name="path" type="const std::string&">
+  Returns the full file path in the filesystem
+</ResponseField>
+
+<ResponseField name="base_name" type="std::string">
+  Returns the file base name (component after the last directory separator)
+</ResponseField>
+
+<ResponseField name="dir_name" type="std::string">
+  Returns the directory base name (component before the file base name)
+</ResponseField>
+
+<ResponseField name="size" type="int64_t">
+  Returns the size in bytes, if available. Only regular files are guaranteed to have a size
+</ResponseField>
+
+<ResponseField name="mtime" type="TimePoint">
+  Returns the time of last modification, if available
+</ResponseField>
+
+<ResponseField name="extension" type="std::string">
+  Returns the file extension (excluding the dot)
+</ResponseField>
+
+<ResponseField name="IsFile" type="bool">
+  Returns true if type is File
+</ResponseField>
+
+<ResponseField name="IsDirectory" type="bool">
+  Returns true if type is Directory
+</ResponseField>
+
+---
+
+## FileSelector
+
+File selector for filesystem APIs.
+
+```cpp
+struct FileSelector {
+  std::string base_dir;
+  bool allow_not_found;
+  bool recursive;
+  int32_t max_recursion;
+}
+```
+
+<ParamField path="base_dir" type="std::string" required>
+  Directory in which to select files. Error if path exists but isn't a directory
+</ParamField>
+
+<ParamField path="allow_not_found" type="bool" required>
+  Behavior if base_dir isn't found. If false, returns error. If true, returns empty selection
+</ParamField>
+
+<ParamField path="recursive" type="bool" required>
+  Whether to recurse into subdirectories
+</ParamField>
+
+<ParamField path="max_recursion" type="int32_t" required>
+  Maximum number of subdirectories to recurse into (default: INT32_MAX)
+</ParamField>
+
+---
+
+## Factory Functions
+
+### FileSystemFromUri
+
+Creates a new FileSystem by URI.
+
+```cpp
+Result<std::shared_ptr<FileSystem>> FileSystemFromUri(
+    const std::string& uri,
+    std::string* out_path = nullptr)
+
+Result<std::shared_ptr<FileSystem>> FileSystemFromUri(
+    const std::string& uri,
+    const io::IOContext& io_context,
+    std::string* out_path = nullptr)
+```
+
+<ParamField path="uri" type="const std::string&" required>
+  URI-based path (e.g., "file:///some/local/path", "s3://bucket/key")
+</ParamField>
+
+<ParamField path="io_context" type="const io::IOContext&">
+  IOContext for the filesystem
+</ParamField>
+
+<ParamField path="out_path" type="std::string*">
+  Optional output parameter for path inside the filesystem
+</ParamField>
+
+Recognized schemes: "file", "mock", "hdfs", "viewfs", "s3", "gs", "gcs". Custom schemes can be registered with RegisterFileSystemFactory.
+
+### FileSystemFromUriOrPath
+
+Creates a new FileSystem by URI or local path.
+
+```cpp
+Result<std::shared_ptr<FileSystem>> FileSystemFromUriOrPath(
+    const std::string& uri,
+    std::string* out_path = nullptr)
+
+Result<std::shared_ptr<FileSystem>> FileSystemFromUriOrPath(
+    const std::string& uri,
+    const io::IOContext& io_context,
+    std::string* out_path = nullptr)
+```
+
+Same as FileSystemFromUri, but also recognizes non-URIs and treats them as local filesystem paths. Only absolute paths are allowed.
+
+---
+
+## Specialized Filesystems
+
+### SubTreeFileSystem
+
+A FileSystem that delegates to another implementation after prepending a fixed base path.
+
+```cpp
+class SubTreeFileSystem : public FileSystem
+```
+
+<ResponseField name="SubTreeFileSystem" type="">
+  <ParamField path="base_path" type="const std::string&" required>
+    Base path to prepend
+  </ParamField>
+  <ParamField path="base_fs" type="std::shared_ptr<FileSystem>" required>
+    Underlying filesystem
+  </ParamField>
+  
+  Constructs a SubTreeFileSystem. Exposes a logical view of a subtree
+</ResponseField>
+
+<ResponseField name="base_path" type="std::string">
+  Returns the base path
+</ResponseField>
+
+<ResponseField name="base_fs" type="std::shared_ptr<FileSystem>">
+  Returns the underlying filesystem
+</ResponseField>
+
+### SlowFileSystem
+
+A FileSystem that delegates to another implementation but inserts latencies.
+
+```cpp
+class SlowFileSystem : public FileSystem
+```
+
+<ResponseField name="SlowFileSystem" type="">
+  <ParamField path="base_fs" type="std::shared_ptr<FileSystem>" required>
+    Underlying filesystem
+  </ParamField>
+  <ParamField path="average_latency" type="double" required>
+    Average latency in seconds
+  </ParamField>
+  <ParamField path="seed" type="int32_t">
+    Random seed for latency generation
+  </ParamField>
+  
+  Constructs a SlowFileSystem for testing
+</ResponseField>
+
+---
+
+## Utility Functions
+
+### CopyFiles
+
+Copies files, including between different filesystems.
+
+```cpp
+Status CopyFiles(
+    const std::vector<FileLocator>& sources,
+    const std::vector<FileLocator>& destinations,
+    const io::IOContext& io_context = io::default_io_context(),
+    int64_t chunk_size = 1024 * 1024,
+    bool use_threads = true)
+
+Status CopyFiles(
+    const std::shared_ptr<FileSystem>& source_fs,
+    const FileSelector& source_sel,
+    const std::shared_ptr<FileSystem>& destination_fs,
+    const std::string& destination_base_dir,
+    const io::IOContext& io_context = io::default_io_context(),
+    int64_t chunk_size = 1024 * 1024,
+    bool use_threads = true)
+```
+
+If source and destination are in the same filesystem, uses FileSystem::CopyFile. Otherwise opens streams and copies chunks. The second overload creates directories as needed.

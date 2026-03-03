@@ -1,0 +1,504 @@
+---
+title: Basic Usage
+description: Learn core concepts and common operations with Red Arrow
+---
+
+# Basic Usage
+
+This guide covers fundamental operations with Red Arrow, from creating tables to performing data transformations.
+
+## Getting Started
+
+First, require the Arrow library:
+
+```ruby
+require 'arrow'
+```
+
+## Creating Tables
+
+### From Ruby Hash
+
+The simplest way to create a table is from a Ruby hash. Data types are automatically detected:
+
+```ruby
+table = Arrow::Table.new(
+  'name' => ['Alice', 'Bob', 'Charlie'],
+  'age' => [25, 30, 35],
+  'salary' => [50000.0, 60000.0, 75000.0]
+)
+
+puts table.to_s
+# Output:
+#         name	  age	    salary
+#      (string)	(int64)	  (double)
+# 0       Alice	     25	  50000.0
+# 1         Bob	     30	  60000.0
+# 2     Charlie	     35	  75000.0
+```
+
+### From Arrays
+
+Create tables using Arrow array types:
+
+```ruby
+count_array = Arrow::UInt32Array.new([0, 2, nil, 4])
+visible_array = Arrow::BooleanArray.new([true, nil, nil, false])
+
+table = Arrow::Table.new(
+  'count' => count_array,
+  'visible' => visible_array
+)
+```
+
+### With Explicit Schema
+
+Define schema explicitly for precise control:
+
+```ruby
+# Define fields
+count_field = Arrow::Field.new('count', :uint32)
+visible_field = Arrow::Field.new('visible', :boolean)
+schema = Arrow::Schema.new([count_field, visible_field])
+
+# Create arrays
+count_array = Arrow::UInt32Array.new([0, 2, nil, 4])
+visible_array = Arrow::BooleanArray.new([true, nil, nil, false])
+
+# Create table with schema
+table = Arrow::Table.new(schema, [count_array, visible_array])
+```
+
+### From Raw Records
+
+Create tables from arrays of records:
+
+```ruby
+schema = {
+  count: :uint32,
+  visible: :boolean
+}
+
+raw_records = [
+  [0, true],
+  [2, nil],
+  [nil, nil],
+  [4, false]
+]
+
+table = Arrow::Table.new(schema, raw_records)
+```
+
+## Loading and Saving Data
+
+### Loading from Files
+
+```ruby
+# Load Arrow IPC file
+table = Arrow::Table.load('data.arrow')
+
+# Load CSV
+table = Arrow::Table.load('data.csv', format: :csv)
+
+# Load Parquet (requires red-parquet)
+require 'parquet'
+table = Arrow::Table.load('data.parquet', format: :parquet)
+```
+
+### Loading from S3
+
+With `red-arrow-dataset`, load directly from S3:
+
+```ruby
+require 'arrow-dataset'
+
+# Public bucket
+table = Arrow::Table.load(URI('s3://bucket/data.csv'))
+
+# Private bucket with credentials
+require 'cgi/util'
+access_key = 'YOUR_ACCESS_KEY'
+secret_key = 'YOUR_SECRET_KEY'
+uri = URI("s3://#{CGI.escape(access_key)}:#{CGI.escape(secret_key)}@bucket/data.parquet")
+table = Arrow::Table.load(uri)
+```
+
+### Loading from HTTP
+
+```ruby
+require 'net/http'
+
+params = {
+  query: "SELECT * FROM table LIMIT 10 FORMAT Arrow",
+  user: "username",
+  password: "password"
+}
+uri = URI('https://example.com/query')
+uri.query = URI.encode_www_form(params)
+resp = Net::HTTP.get(uri)
+
+table = Arrow::Table.load(Arrow::Buffer.new(resp))
+```
+
+### Saving Tables
+
+```ruby
+# Save as Arrow IPC file
+table.save('output.arrow')
+
+# Save as CSV
+table.save('output.csv', format: :csv)
+
+# Save as Parquet
+require 'parquet'
+table.save('output.parquet', format: :parquet)
+```
+
+## Accessing Data
+
+### Column Access
+
+```ruby
+# Access column by name
+age_column = table['age']
+age_column = table[:age]
+
+# Access column by index
+first_column = table.columns[0]
+
+# Get column names
+table.column_names  # => ['name', 'age', 'salary']
+
+# Get number of columns
+table.n_columns  # => 3
+```
+
+### Row Access
+
+```ruby
+# Get number of rows
+table.n_rows
+table.size
+table.length
+
+# Access single row (returns Arrow::Record)
+row = table.slice(0)
+row['name']   # => 'Alice'
+row['age']    # => 25
+
+# Iterate over rows
+table.each_record_batch do |record_batch|
+  record_batch.each do |record|
+    puts "#{record['name']}: #{record['age']}"
+  end
+end
+```
+
+## Filtering Data
+
+### Using Slicer
+
+Red Arrow provides a powerful slicer syntax for filtering:
+
+```ruby
+table = Arrow::Table.new(
+  'name' => ['Tom', 'Max', 'Kate'],
+  'age' => [22, 23, 19]
+)
+
+# Simple condition
+result = table.slice { |slicer| slicer['age'] > 19 }
+# Returns rows where age > 19
+
+# Range condition
+result = table.slice { |slicer| slicer['age'].in?(19..22) }
+# Returns rows where age is between 19 and 22
+```
+
+### Combining Conditions
+
+Use logical operators to combine filters:
+
+```ruby
+# AND (&)
+result = table.slice { |slicer|
+  (slicer['age'] > 19) & (slicer['age'] < 23)
+}
+
+# OR (|)
+result = table.slice { |slicer|
+  (slicer['age'] < 20) | (slicer['age'] > 22)
+}
+
+# XOR (^)
+result = table.slice { |slicer|
+  (slicer['age'] < 21) ^ (slicer['name'] == 'Tom')
+}
+```
+
+### Hash-based Filtering
+
+```ruby
+# Filter by exact match
+result = table.slice('name' => 'Tom')
+
+# Filter by range
+result = table.slice('age' => 20..25)
+```
+
+### Array-based Filtering
+
+```ruby
+# Boolean array
+filter = [true, false, true]
+result = table.slice(filter)
+
+# Arrow BooleanArray
+filter_array = Arrow::BooleanArray.new([true, false, true])
+result = table.slice(filter_array)
+```
+
+## Grouping and Aggregation
+
+Perform group-by operations:
+
+```ruby
+table = Arrow::Table.new(
+  'name' => ['Tom', 'Max', 'Kate', 'Tom'],
+  'amount' => [10, 2, 3, 5]
+)
+
+# Group and sum
+result = table.group('name').sum('amount')
+# Output:
+#   name	amount
+# 0 Kate	     3
+# 1  Max	     2
+# 2  Tom	    15
+
+# Other aggregation functions
+table.group('name').count('amount')
+table.group('name').mean('amount')
+table.group('name').min('amount')
+table.group('name').max('amount')
+```
+
+## Joining Tables
+
+Join tables using common keys:
+
+```ruby
+amounts = Arrow::Table.new(
+  'name' => ['Tom', 'Max', 'Kate'],
+  'amount' => [10, 2, 3]
+)
+
+levels = Arrow::Table.new(
+  'name' => ['Max', 'Kate', 'Tom'],
+  'level' => [1, 9, 5]
+)
+
+# Natural join on common column
+result = amounts.join(levels, [:name])
+# Output:
+#   name	amount	name	level
+# 0  Tom	    10	 Tom	    5
+# 1  Max	     2	 Max	    1
+# 2 Kate	     3	Kate	    9
+```
+
+### Join Types
+
+```ruby
+# Inner join (default)
+table1.join(table2, [:key], type: :inner)
+
+# Left outer join
+table1.join(table2, [:key], type: :left_outer)
+
+# Right outer join
+table1.join(table2, [:key], type: :right_outer)
+
+# Full outer join
+table1.join(table2, [:key], type: :full_outer)
+```
+
+### Different Key Names
+
+```ruby
+# Join when key columns have different names
+table1.join(table2, {left: 'user_id', right: 'id'})
+```
+
+## Transforming Data
+
+### Adding Columns
+
+```ruby
+# Merge adds or replaces columns
+new_column = Arrow::Int64Array.new([100, 200, 300])
+result = table.merge('score' => new_column)
+```
+
+### Removing Columns
+
+```ruby
+# Remove by name
+result = table.remove_column('age')
+
+# Remove by index
+result = table.remove_column(1)
+```
+
+### Slicing by Range
+
+```ruby
+# Slice rows 2 to 4 (inclusive)
+result = table.slice(2..4)
+
+# Slice rows 2 to 4 (exclusive end)
+result = table.slice(2...4)
+
+# Slice with offset and length
+result = table.slice(2, 3)  # 3 rows starting at index 2
+```
+
+## Working with Compute Functions
+
+Access Arrow's compute functions directly:
+
+```ruby
+# Find a compute function
+add = Arrow::Function.find('add')
+
+# Execute function
+result = add.execute([table['age'].data, table['age'].data])
+ages_doubled = result.value
+```
+
+Common functions:
+- Arithmetic: `add`, `subtract`, `multiply`, `divide`
+- Comparison: `equal`, `greater`, `less`, `greater_equal`, `less_equal`
+- String: `string_length`, `starts_with`, `ends_with`
+- Statistical: `sum`, `mean`, `min`, `max`, `stddev`
+
+## Reading and Writing Streams
+
+### Writing Streams
+
+```ruby
+# Define schema
+fields = [
+  Arrow::Field.new('uint8', :uint8),
+  Arrow::Field.new('uint16', :uint16),
+  Arrow::Field.new('int32', :int32)
+]
+schema = Arrow::Schema.new(fields)
+
+# Write to stream
+Arrow::FileOutputStream.open('/tmp/stream.arrow', false) do |output|
+  Arrow::RecordBatchStreamWriter.open(output, schema) do |writer|
+    # Create record batches
+    columns = [
+      Arrow::UInt8Array.new([1, 2, 4, 8]),
+      Arrow::UInt16Array.new([1, 2, 4, 8]),
+      Arrow::Int32Array.new([1, -2, 4, -8])
+    ]
+    record_batch = Arrow::RecordBatch.new(schema, 4, columns)
+    writer.write_record_batch(record_batch)
+  end
+end
+```
+
+### Reading Streams
+
+```ruby
+Arrow::MemoryMappedInputStream.open('/tmp/stream.arrow') do |input|
+  reader = Arrow::RecordBatchStreamReader.new(input)
+  fields = reader.schema.fields
+  
+  reader.each_with_index do |record_batch, i|
+    puts "Record batch #{i}:"
+    fields.each do |field|
+      field_name = field.name
+      values = record_batch.collect { |record| record[field_name] }
+      puts "  #{field_name}: #{values.inspect}"
+    end
+  end
+end
+```
+
+## Memory Management
+
+### Packing Tables
+
+Optimize memory layout by packing chunked arrays:
+
+```ruby
+# Pack consolidates chunked arrays into contiguous memory
+packed_table = table.pack
+```
+
+### Memory-Mapped Files
+
+Use memory mapping for efficient file access:
+
+```ruby
+Arrow::MemoryMappedInputStream.open('/path/to/file.arrow') do |input|
+  reader = Arrow::RecordBatchFileReader.new(input)
+  table = reader.read_all
+end
+```
+
+## Type System
+
+Red Arrow supports all Arrow data types:
+
+### Numeric Types
+
+```ruby
+:int8, :int16, :int32, :int64
+:uint8, :uint16, :uint32, :uint64
+:float, :double
+```
+
+### String and Binary
+
+```ruby
+:string, :binary
+:large_string, :large_binary
+```
+
+### Temporal Types
+
+```ruby
+:date32, :date64
+:time32, :time64
+:timestamp
+:duration
+```
+
+### Other Types
+
+```ruby
+:boolean
+:decimal128, :decimal256
+:list, :large_list, :fixed_size_list
+:struct, :map
+:dictionary
+```
+
+## Best Practices
+
+1. **Use explicit schemas** for production code to ensure data consistency
+2. **Pack tables** when memory is constrained or before serialization
+3. **Use memory-mapped I/O** for large files
+4. **Leverage columnar operations** instead of row-by-row processing
+5. **Batch operations** when possible for better performance
+6. **Close resources** explicitly or use blocks for automatic cleanup
+
+## Next Steps
+
+- Explore the [Ruby source code](https://github.com/apache/arrow/tree/main/ruby/red-arrow) for advanced usage
+- Check out the [Apache Arrow documentation](https://arrow.apache.org/) for deeper understanding
+- Join the [Apache Arrow community](https://arrow.apache.org/community/) for support

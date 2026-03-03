@@ -1,0 +1,417 @@
+---
+title: "Data Wrangling with dplyr"
+description: "Use familiar dplyr verbs to analyze Arrow Tables and Datasets with lazy evaluation and high performance"
+---
+
+The arrow package provides a dplyr backend that allows you to manipulate Arrow data using familiar tidyverse syntax. This works with both in-memory `Table` objects and on-disk `Dataset` objects, enabling analysis of data that's larger than memory.
+
+## Getting Started
+
+Load both arrow and dplyr to enable the integration:
+
+```r
+library(dplyr, warn.conflicts = FALSE)
+library(arrow, warn.conflicts = FALSE)
+
+# Create an Arrow Table
+sw <- arrow_table(starwars, as_data_frame = FALSE)
+```
+
+## One-Table Verbs
+
+Arrow supports most single-table dplyr verbs:
+
+```r
+result <- sw |>
+  filter(homeworld == "Tatooine") |>
+  rename(height_cm = height, mass_kg = mass) |>
+  mutate(height_in = height_cm / 2.54, mass_lbs = mass_kg * 2.2046) |>
+  arrange(desc(birth_year)) |>
+  select(name, height_in, mass_lbs)
+```
+
+### Lazy Evaluation
+
+Arrow uses lazy evaluation - computations aren't performed until explicitly requested:
+
+```r
+result
+#> Table (query)
+#> name: string
+#> height_in: double
+#> mass_lbs: double
+#>
+#> See $.data for the source Arrow object
+```
+
+The `result` is an `arrow_dplyr_query` object representing the computation, not the actual data.
+
+### Executing Queries
+
+Use `compute()` or `collect()` to materialize results:
+
+```r
+# Returns an Arrow Table
+compute(result)
+
+# Returns an R data frame
+collect(result)
+#>   name              height_in  mass_lbs
+#> 1 C-3PO              65.35433  165.3467
+#> 2 R5-D4              38.18898        NA
+#> 3 Biggs Darklighter  72.04724  185.1876
+```
+
+<Tip>
+Use `compute()` to keep data in Arrow format for further Arrow/dplyr operations. Use `collect()` when you need an R data frame for base R functions or visualization.
+</Tip>
+
+## Aggregation and Grouping
+
+Arrow supports `group_by()` and `summarize()` for aggregations:
+
+```r
+sw |>
+  group_by(species) |>
+  summarize(mean_height = mean(height, na.rm = TRUE)) |>
+  collect()
+#> # A tibble: 38 × 2
+#>    species   mean_height
+#>    <chr>           <dbl>
+#>  1 Human            177.
+#>  2 Droid            140.
+#>  3 Wookiee          231
+#>  4 Rodian           173
+#>  5 Hutt             175
+```
+
+### Convenience Functions
+
+Common dplyr helpers work as expected:
+
+```r
+sw |>
+  count(gender) |>
+  collect()
+#> # A tibble: 3 × 2
+#>   gender        n
+#>   <chr>     <int>
+#> 1 masculine    66
+#> 2 feminine     17
+#> 3 NA            4
+```
+
+<Note>
+Window functions like `ntile()` are not yet supported in Arrow queries. These require collecting data to R first.
+</Note>
+
+## Two-Table Verbs (Joins)
+
+Arrow supports equality joins:
+
+```r
+jedi <- data.frame(
+  name = c("C-3PO", "Luke Skywalker", "Obi-Wan Kenobi"),
+  jedi = c(FALSE, TRUE, TRUE)
+)
+
+sw |>
+  select(name, height, mass) |>
+  right_join(jedi, by = "name") |>
+  collect()
+#>              name height mass  jedi
+#> 1           C-3PO    167   75 FALSE
+#> 2  Luke Skywalker    172   77  TRUE
+#> 3 Obi-Wan Kenobi    182   77  TRUE
+```
+
+Supported join types:
+- `left_join()`
+- `right_join()`
+- `inner_join()`
+- `full_join()`
+- `semi_join()`
+- `anti_join()`
+
+## Supported Functions
+
+Arrow provides support for many R functions within dplyr verbs:
+
+### String Functions
+```r
+sw |>
+  mutate(
+    name_upper = toupper(name),
+    name_length = nchar(name),
+    has_skywalker = grepl("Skywalker", name)
+  ) |>
+  select(name, name_upper, name_length, has_skywalker) |>
+  head() |>
+  collect()
+```
+
+### Math Functions
+```r
+sw |>
+  filter(!is.na(height), !is.na(mass)) |>
+  mutate(
+    bmi = mass / (height / 100)^2,
+    log_mass = log(mass),
+    rounded_height = round(height, -1)
+  ) |>
+  select(name, bmi, log_mass, rounded_height) |>
+  head() |>
+  collect()
+```
+
+### Date/Time Functions
+```r
+flights <- arrow_table(
+  date = as.Date(c("2024-01-15", "2024-02-20", "2024-03-10")),
+  timestamp = as.POSIXct(c("2024-01-15 14:30:00", 
+                            "2024-02-20 09:15:00",
+                            "2024-03-10 18:45:00"))
+)
+
+flights |>
+  mutate(
+    year = year(date),
+    month = month(date),
+    hour = hour(timestamp),
+    weekday = wday(date, label = TRUE)
+  ) |>
+  collect()
+```
+
+### Type Conversions
+```r
+sw |>
+  mutate(
+    height_chr = as.character(height),
+    mass_int = as.integer(mass),
+    is_tall = as.logical(height > 180)
+  ) |>
+  select(name, height_chr, mass_int, is_tall) |>
+  head() |>
+  collect()
+```
+
+<Tip>
+For a complete list of supported functions, see the [Arrow R function documentation](https://arrow.apache.org/docs/r/reference/acero.html).
+</Tip>
+
+## Custom Function Bindings
+
+Register custom R functions for use in Arrow queries:
+
+```r
+# Define a custom function
+to_snake_name <- function(context, string) {
+  replace <- c(`'` = "", `"` = "", `-` = "", `\\.` = "_", ` ` = "_")
+  string |>
+    stringr::str_replace_all(replace) |>
+    stringr::str_to_lower() |>
+    stringi::stri_trans_general(id = "Latin-ASCII")
+}
+
+# Register the function
+register_scalar_function(
+  name = "to_snake_name",
+  fun = to_snake_name,
+  in_type = utf8(),
+  out_type = utf8(),
+  auto_convert = TRUE
+)
+
+# Use in queries
+sw |>
+  mutate(snake_name = to_snake_name(name)) |>
+  select(name, snake_name) |>
+  head() |>
+  collect()
+#>              name       snake_name
+#> 1 Luke Skywalker   luke_skywalker
+#> 2          C-3PO            c_3po
+#> 3          R2-D2            r2_d2
+```
+
+## Handling Unsupported Expressions
+
+### With Tables (in-memory)
+
+For Arrow Tables, unsupported functions trigger automatic `collect()`:
+
+```r
+sw |>
+  filter(!is.na(height), !is.na(mass)) |>
+  transmute(name, height, mass, res = residuals(lm(mass ~ height)))
+#> # A tibble: 59 × 4
+#>    name               height  mass    res
+#>    <chr>               <int> <dbl>  <dbl>
+#>  1 Luke Skywalker        172    77  -6.95
+#>  2 C-3PO                 167    75  -5.07
+```
+
+This automatically converts to a data frame before applying the unsupported operation.
+
+### With Datasets (larger-than-memory)
+
+For Datasets, unsupported expressions raise an error to prevent accidentally loading huge data:
+
+```r
+# Write dataset
+dataset_path <- tempfile()
+write_dataset(starwars, dataset_path)
+sw2 <- open_dataset(dataset_path)
+
+# This raises an error
+sw2 |>
+  filter(!is.na(height), !is.na(mass)) |>
+  transmute(name, height, mass, res = residuals(lm(mass ~ height)))
+#> Error: Expression residuals(lm(mass ~ height)) not supported
+```
+
+Explicitly call `collect()` when you need unsupported operations:
+
+```r
+sw2 |>
+  filter(!is.na(height), !is.na(mass)) |>
+  collect() |>  # Bring data into R
+  transmute(name, height, mass, res = residuals(lm(mass ~ height)))
+```
+
+<Note>
+Be cautious with `collect()` on Datasets. Filter and select columns first to reduce the amount of data loaded into memory.
+</Note>
+
+## Integration with DuckDB
+
+For operations not supported by Arrow, use DuckDB which has native Arrow support:
+
+```r
+library(duckdb)
+
+sw |>
+  select(name, height, hair_color, eye_color) |>
+  filter(!is.na(hair_color)) |>
+  to_duckdb() |>
+  # DuckDB operations here
+  group_by(hair_color) |>
+  filter(height < mean(height, na.rm = TRUE)) |>
+  to_arrow() |>
+  # Back to Arrow for more operations
+  arrange(height) |>
+  collect()
+```
+
+The `to_duckdb()` and `to_arrow()` functions provide zero-copy data transfer between Arrow and DuckDB.
+
+## Performance Tips
+
+### 1. Filter Early
+
+Apply filters as early as possible to reduce data volume:
+
+```r
+# Good: Filter first
+ds |>
+  filter(year == 2020, passenger_count > 0) |>
+  group_by(month) |>
+  summarize(avg_fare = mean(fare_amount)) |>
+  collect()
+```
+
+### 2. Select Only Needed Columns
+
+Read only the columns you need:
+
+```r
+# Good: Select specific columns
+ds |>
+  select(passenger_count, fare_amount, tip_amount) |>
+  filter(fare_amount > 100) |>
+  collect()
+```
+
+### 3. Use Lazy Evaluation
+
+Build up queries without intermediate collections:
+
+```r
+# Good: Single pipeline with final collect
+result <- ds |>
+  filter(condition1) |>
+  mutate(new_col = expr) |>
+  group_by(group_var) |>
+  summarize(stat = mean(value)) |>
+  collect()
+```
+
+### 4. Leverage Partitioning
+
+Filter on partition columns to skip entire files:
+
+```r
+# If data is partitioned by year and month
+ds |>
+  filter(year == 2020, month %in% c(1, 2, 3)) |>  # Reads only Q1 files
+  summarize(total = sum(amount)) |>
+  collect()
+```
+
+## Real-World Example: NYC Taxi Data
+
+Analyze a large dataset efficiently:
+
+```r
+# Open multi-file dataset (1.7 billion rows, 70GB)
+nyc_taxi <- open_dataset("nyc-taxi/")
+
+# Complex query on large data
+system.time(
+  result <- nyc_taxi |>
+    filter(total_amount > 100, year == 2015) |>
+    select(tip_amount, total_amount, passenger_count) |>
+    mutate(tip_pct = 100 * tip_amount / total_amount) |>
+    group_by(passenger_count) |>
+    summarise(
+      median_tip_pct = median(tip_pct),
+      n = n()
+    ) |>
+    arrange(desc(median_tip_pct)) |>
+    collect()
+)
+#>    user  system elapsed
+#>   4.436   1.012   1.402
+
+result
+#> # A tibble: 10 × 3
+#>    passenger_count median_tip_pct      n
+#>              <int>          <dbl>  <int>
+#>  1               1           16.6 143087
+#>  2               2           16.2  34418
+#>  3               5           16.7   5806
+```
+
+This query processes billions of rows in seconds thanks to:
+- Lazy evaluation (optimized query plan)
+- Predicate pushdown (filters during file reading)
+- Partition pruning (skips files from other years)
+- Column projection (reads only needed columns)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Datasets" icon="database" href="/r/dataset">
+    Work with multi-file and larger-than-memory data
+  </Card>
+  <Card title="Reading Files" icon="file" href="/r/reading-writing">
+    Read and write various file formats efficiently
+  </Card>
+</CardGroup>
+
+## Additional Resources
+
+- [Supported Functions Reference](https://arrow.apache.org/docs/r/reference/acero.html)
+- [Arrow R Cookbook - Data Manipulation](https://arrow.apache.org/cookbook/r/manipulating-data---arrays.html)
+- [Writing Custom Bindings](https://arrow.apache.org/docs/r/articles/developers/writing_bindings.html)

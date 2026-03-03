@@ -1,0 +1,598 @@
+---
+title: Schemas and Metadata
+description: Working with schemas, fields, and custom metadata in Apache Arrow
+---
+
+Schemas define the structure of Arrow data, including column names, types, and metadata. Understanding schemas is essential for working with tables and record batches.
+
+## Creating Schemas
+
+A schema is a collection of named fields, each with a data type and optional metadata.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+
+    # Create a simple schema
+    schema = pa.schema([
+        ('id', pa.int32()),
+        ('name', pa.string()),
+        ('score', pa.float64())
+    ])
+
+    # Create schema with Field objects (allows nullable specification)
+    schema = pa.schema([
+        pa.field('id', pa.int32(), nullable=False),
+        pa.field('name', pa.string(), nullable=True),
+        pa.field('timestamp', pa.timestamp('ms'), nullable=False)
+    ])
+
+    # Access schema properties
+    print(f"Number of fields: {len(schema)}")
+    print(f"Field names: {schema.names}")
+    print(f"Field types: {schema.types}")
+
+    # Get specific field
+    field = schema.field('name')
+    print(f"Field: {field.name}, Type: {field.type}, Nullable: {field.nullable}")
+
+    # Get field by index
+    field = schema.field(0)
+
+    # Check if field exists
+    if 'email' in schema.names:
+        email_field = schema.field('email')
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+
+    std::shared_ptr<arrow::Schema> CreateSchema() {
+      // Create fields
+      auto field_id = arrow::field("id", arrow::int32(), /*nullable=*/false);
+      auto field_name = arrow::field("name", arrow::utf8(), /*nullable=*/true);
+      auto field_score = arrow::field("score", arrow::float64());
+
+      // Create schema from fields
+      auto schema = arrow::schema({
+        field_id,
+        field_name,
+        field_score
+      });
+
+      // Access schema properties
+      std::cout << "Number of fields: " << schema->num_fields() << std::endl;
+      
+      // Get field by index
+      auto field = schema->field(0);
+      std::cout << "Field: " << field->name() 
+                << ", Type: " << field->type()->ToString()
+                << ", Nullable: " << field->nullable() << std::endl;
+
+      // Get field by name
+      int field_index = schema->GetFieldIndex("name");
+      if (field_index != -1) {
+        auto name_field = schema->field(field_index);
+      }
+
+      return schema;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Schema Metadata
+
+Schemas and fields can have custom key-value metadata attached.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+
+    # Create schema with metadata
+    schema = pa.schema([
+        pa.field('id', pa.int32()),
+        pa.field('value', pa.float64())
+    ], metadata={
+        'version': '1.0',
+        'source': 'sensor_data',
+        'created_at': '2024-01-01'
+    })
+
+    # Access metadata
+    print(f"Metadata: {schema.metadata}")
+    if schema.metadata:
+        print(f"Version: {schema.metadata[b'version']}")
+
+    # Field-level metadata
+    field_with_meta = pa.field(
+        'temperature', 
+        pa.float64(),
+        metadata={'unit': 'celsius', 'precision': '0.1'}
+    )
+    
+    schema = pa.schema([field_with_meta])
+    field = schema.field('temperature')
+    print(f"Field metadata: {field.metadata}")
+
+    # Add or update metadata
+    new_metadata = {
+        'version': '2.0',
+        'modified': 'true'
+    }
+    schema_with_new_meta = schema.with_metadata(new_metadata)
+
+    # Remove metadata
+    schema_no_meta = schema.remove_metadata()
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+
+    std::shared_ptr<arrow::Schema> CreateSchemaWithMetadata() {
+      // Create schema metadata
+      auto schema_metadata = arrow::key_value_metadata({
+        {"version", "1.0"},
+        {"source", "sensor_data"},
+        {"created_at", "2024-01-01"}
+      });
+
+      // Create field with metadata
+      auto field_metadata = arrow::key_value_metadata({
+        {"unit", "celsius"},
+        {"precision", "0.1"}
+      });
+      
+      auto field = arrow::field(
+        "temperature",
+        arrow::float64(),
+        /*nullable=*/true,
+        field_metadata
+      );
+
+      // Create schema with metadata
+      auto schema = arrow::schema({field}, schema_metadata);
+
+      // Access metadata
+      if (schema->metadata()) {
+        std::cout << "Metadata keys: " << schema->metadata()->size() << std::endl;
+        
+        auto value = schema->metadata()->Get("version");
+        if (value.ok()) {
+          std::cout << "Version: " << value.ValueOrDie() << std::endl;
+        }
+      }
+
+      // Add metadata
+      auto new_metadata = arrow::key_value_metadata({
+        {"version", "2.0"},
+        {"modified", "true"}
+      });
+      auto new_schema = schema->WithMetadata(new_metadata);
+
+      return new_schema;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+Metadata keys and values in Arrow are stored as byte strings. In Python, you may need to encode strings to bytes when setting metadata and decode when reading.
+</Note>
+
+## Working with Tables
+
+Tables combine schemas with columnar data.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+
+    # Create schema
+    schema = pa.schema([
+        ('id', pa.int32()),
+        ('name', pa.string()),
+        ('score', pa.float64())
+    ])
+
+    # Create table from arrays
+    table = pa.table({
+        'id': [1, 2, 3, 4],
+        'name': ['Alice', 'Bob', 'Charlie', 'David'],
+        'score': [95.5, 87.2, 92.8, 78.9]
+    }, schema=schema)
+
+    print(f"Schema: {table.schema}")
+    print(f"Shape: {table.shape}")
+    print(f"Columns: {table.column_names}")
+
+    # Access columns
+    id_column = table['id']  # By name
+    name_column = table.column(1)  # By index
+
+    # Get column as array
+    scores = table['score'].to_pylist()
+
+    # Add column to table
+    new_column = pa.array([True, False, True, False])
+    new_table = table.append_column(
+        pa.field('active', pa.bool_()),
+        new_column
+    )
+
+    # Remove column
+    table_no_score = table.remove_column(2)
+
+    # Select columns
+    subset = table.select(['id', 'name'])
+
+    # Rename columns
+    renamed = table.rename_columns(['user_id', 'username', 'final_score'])
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/table.h>
+
+    arrow::Result<std::shared_ptr<arrow::Table>> CreateTable() {
+      // Create schema
+      auto schema = arrow::schema({
+        arrow::field("id", arrow::int32()),
+        arrow::field("name", arrow::utf8()),
+        arrow::field("score", arrow::float64())
+      });
+
+      // Create arrays
+      auto id_array = arrow::ArrayFromJSON(arrow::int32(), "[1, 2, 3, 4]");
+      auto name_array = arrow::ArrayFromJSON(
+        arrow::utf8(), 
+        "[\"Alice\", \"Bob\", \"Charlie\", \"David\"]"
+      );
+      auto score_array = arrow::ArrayFromJSON(
+        arrow::float64(),
+        "[95.5, 87.2, 92.8, 78.9]"
+      );
+
+      // Create table
+      auto table = arrow::Table::Make(
+        schema,
+        {
+          id_array.ValueOrDie(),
+          name_array.ValueOrDie(),
+          score_array.ValueOrDie()
+        }
+      );
+
+      std::cout << "Schema: " << table->schema()->ToString() << std::endl;
+      std::cout << "Rows: " << table->num_rows() << std::endl;
+      std::cout << "Columns: " << table->num_columns() << std::endl;
+
+      // Access columns
+      auto id_column = table->column(0);  // By index
+      auto name_column = table->GetColumnByName("name");  // By name
+
+      // Add column
+      auto new_array = arrow::ArrayFromJSON(arrow::boolean(), "[true, false, true, false]");
+      auto new_field = arrow::field("active", arrow::boolean());
+      ARROW_ASSIGN_OR_RAISE(auto new_table,
+        table->AddColumn(3, new_field, new_array.ValueOrDie()));
+
+      // Remove column
+      ARROW_ASSIGN_OR_RAISE(auto table_no_score,
+        table->RemoveColumn(2));
+
+      return table;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Record Batches
+
+Record batches are like tables but represent a single chunk of data with contiguous memory.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+
+    # Create schema
+    schema = pa.schema([
+        ('x', pa.int32()),
+        ('y', pa.float64())
+    ])
+
+    # Create record batch
+    batch = pa.record_batch([
+        pa.array([1, 2, 3, 4]),
+        pa.array([1.1, 2.2, 3.3, 4.4])
+    ], schema=schema)
+
+    print(f"Schema: {batch.schema}")
+    print(f"Num rows: {batch.num_rows}")
+    print(f"Num columns: {batch.num_columns}")
+
+    # Access columns
+    x_col = batch.column('x')
+    y_col = batch[1]  # By index
+
+    # Convert to table
+    table = pa.Table.from_batches([batch])
+
+    # Slice record batch (zero-copy)
+    sliced = batch.slice(1, 2)  # offset=1, length=2
+
+    # Convert to pandas
+    df = batch.to_pandas()
+
+    # Convert to Python dict
+    data_dict = batch.to_pydict()
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/record_batch.h>
+
+    arrow::Result<std::shared_ptr<arrow::RecordBatch>> 
+    CreateRecordBatch() {
+      // Create schema
+      auto schema = arrow::schema({
+        arrow::field("x", arrow::int32()),
+        arrow::field("y", arrow::float64())
+      });
+
+      // Create arrays
+      auto x_array = arrow::ArrayFromJSON(arrow::int32(), "[1, 2, 3, 4]");
+      auto y_array = arrow::ArrayFromJSON(
+        arrow::float64(), 
+        "[1.1, 2.2, 3.3, 4.4]"
+      );
+
+      // Create record batch
+      auto batch = arrow::RecordBatch::Make(
+        schema,
+        4,  // num_rows
+        {
+          x_array.ValueOrDie(),
+          y_array.ValueOrDie()
+        }
+      );
+
+      std::cout << "Num rows: " << batch->num_rows() << std::endl;
+      std::cout << "Num columns: " << batch->num_columns() << std::endl;
+
+      // Access columns
+      auto x_col = batch->column(0);
+      auto y_col = batch->GetColumnByName("y");
+
+      // Slice record batch (zero-copy)
+      auto sliced = batch->Slice(1, 2);  // offset, length
+
+      // Convert to table
+      ARROW_ASSIGN_OR_RAISE(auto table,
+        arrow::Table::FromRecordBatches({batch}));
+
+      return batch;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+Record batches require all arrays to have the same length. If arrays have different lengths, use a Table with chunked arrays instead.
+</Warning>
+
+## Schema Evolution and Compatibility
+
+Arrow provides utilities for working with evolving schemas.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+
+    # Original schema
+    schema_v1 = pa.schema([
+        ('id', pa.int32()),
+        ('name', pa.string())
+    ])
+
+    # Evolved schema (added field)
+    schema_v2 = pa.schema([
+        ('id', pa.int32()),
+        ('name', pa.string()),
+        ('email', pa.string())
+    ])
+
+    # Check equality
+    print(f"Schemas equal: {schema_v1.equals(schema_v2)}")
+
+    # Check metadata equality separately
+    print(f"Equal ignore metadata: {schema_v1.equals(schema_v2, check_metadata=False)}")
+
+    # Unify multiple schemas (finds common schema)
+    schemas = [schema_v1, schema_v2]
+    try:
+        unified = pa.unify_schemas(schemas)
+        print(f"Unified schema: {unified}")
+    except pa.ArrowInvalid as e:
+        print(f"Cannot unify: {e}")
+
+    # Check if field types are compatible
+    field1 = pa.field('value', pa.int32())
+    field2 = pa.field('value', pa.int64())
+    
+    # Can cast from int32 to int64
+    can_cast = pa.types.is_integer(field1.type) and \
+               pa.types.is_integer(field2.type)
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+
+    void SchemaEvolution() {
+      // Original schema
+      auto schema_v1 = arrow::schema({
+        arrow::field("id", arrow::int32()),
+        arrow::field("name", arrow::utf8())
+      });
+
+      // Evolved schema
+      auto schema_v2 = arrow::schema({
+        arrow::field("id", arrow::int32()),
+        arrow::field("name", arrow::utf8()),
+        arrow::field("email", arrow::utf8())
+      });
+
+      // Check equality
+      bool equal = schema_v1->Equals(*schema_v2);
+      std::cout << "Schemas equal: " << equal << std::endl;
+
+      // Check equality ignoring metadata
+      bool equal_no_meta = schema_v1->Equals(
+        *schema_v2,
+        /*check_metadata=*/false
+      );
+
+      // Unify schemas
+      std::vector<std::shared_ptr<arrow::Schema>> schemas = {
+        schema_v1, schema_v2
+      };
+      
+      auto result = arrow::UnifySchemas(schemas);
+      if (result.ok()) {
+        auto unified = result.ValueOrDie();
+        std::cout << "Unified: " << unified->ToString() << std::endl;
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Custom Metadata for Interoperability
+
+Arrow uses metadata for cross-language and cross-system compatibility.
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import json
+
+    # Pandas metadata (automatically added by from_pandas)
+    import pandas as pd
+    df = pd.DataFrame({'a': [1, 2, 3]})
+    table = pa.Table.from_pandas(df)
+    
+    if table.schema.metadata:
+        pandas_meta = table.schema.metadata.get(b'pandas')
+        if pandas_meta:
+            print(json.loads(pandas_meta))
+
+    # Add custom application metadata
+    schema = pa.schema([
+        pa.field('data', pa.float64())
+    ], metadata={
+        'application': 'my_app',
+        'version': '1.0',
+        'data_quality': json.dumps({
+            'validated': True,
+            'completeness': 0.95
+        })
+    })
+
+    # Preserve metadata when writing
+    import pyarrow.parquet as pq
+    table = pa.table({'data': [1.0, 2.0, 3.0]}, schema=schema)
+    pq.write_table(table, 'data.parquet')
+    
+    # Read back with metadata
+    read_table = pq.read_table('data.parquet')
+    print(f"Preserved metadata: {read_table.schema.metadata}")
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/io/file.h>
+    #include <parquet/arrow/writer.h>
+    #include <parquet/arrow/reader.h>
+
+    void CustomMetadata() {
+      // Create schema with custom metadata
+      auto metadata = arrow::key_value_metadata({
+        {"application", "my_app"},
+        {"version", "1.0"},
+        {"description", "Sensor data from device XYZ"}
+      });
+
+      auto schema = arrow::schema(
+        {arrow::field("data", arrow::float64())},
+        metadata
+      );
+
+      // Create table
+      auto array = arrow::ArrayFromJSON(arrow::float64(), "[1.0, 2.0, 3.0]");
+      auto table = arrow::Table::Make(schema, {array.ValueOrDie()});
+
+      // Write to Parquet with metadata
+      ARROW_ASSIGN_OR_RAISE(auto outfile,
+        arrow::io::FileOutputStream::Open("data.parquet"));
+      
+      ARROW_CHECK_OK(
+        parquet::arrow::WriteTable(
+          *table,
+          arrow::default_memory_pool(),
+          outfile,
+          /*chunk_size=*/1024
+        )
+      );
+
+      // Read back with metadata
+      ARROW_ASSIGN_OR_RAISE(auto infile,
+        arrow::io::ReadableFile::Open("data.parquet"));
+      
+      std::unique_ptr<parquet::arrow::FileReader> reader;
+      ARROW_CHECK_OK(
+        parquet::arrow::OpenFile(infile, arrow::default_memory_pool(), &reader)
+      );
+
+      std::shared_ptr<arrow::Table> read_table;
+      ARROW_CHECK_OK(reader->ReadTable(&read_table));
+
+      // Access preserved metadata
+      if (read_table->schema()->metadata()) {
+        std::cout << "Metadata preserved" << std::endl;
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+1. **Use nullable=False when appropriate**: Non-nullable fields can be more efficient and document your data constraints.
+
+2. **Add descriptive metadata**: Use schema and field metadata to document units, precision, data sources, and validation rules.
+
+3. **Version your schemas**: Include version information in metadata when schemas evolve over time.
+
+4. **Test schema compatibility**: When reading data written with an older schema version, ensure compatibility before processing.
+
+5. **Preserve metadata**: When transforming tables, explicitly preserve metadata if needed:
+   ```python
+   new_table = transform(table)
+   new_table = new_table.replace_schema_metadata(table.schema.metadata)
+   ```
+
+<Note>
+Arrow schemas are immutable. Operations like adding metadata or fields create new schema objects rather than modifying existing ones.
+</Note>

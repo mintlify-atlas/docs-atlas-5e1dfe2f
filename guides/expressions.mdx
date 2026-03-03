@@ -1,0 +1,483 @@
+---
+title: Expressions and Filters
+description: Build powerful filter expressions and computations for data processing with Apache Arrow
+---
+
+Expressions in Apache Arrow provide a declarative way to describe data transformations and filtering operations. They can be optimized and pushed down to data sources.
+
+## Expression Basics
+
+### Creating Expressions
+
+Expressions are built from three fundamental types:
+
+- **Literals**: Constant values
+- **Field references**: References to columns in the data
+- **Function calls**: Operations on literals and field references
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/compute/expression.h>
+
+    using namespace arrow::compute;
+
+    // Literal expressions
+    auto lit_int = literal(42);
+    auto lit_str = literal("hello");
+    auto lit_bool = literal(true);
+
+    // Field reference expressions
+    auto field_a = field_ref("column_a");
+    auto nested_field = field_ref(FieldRef("parent", "child"));
+
+    // Function call expressions
+    auto comparison = equal(field_ref("age"), literal(25));
+    auto arithmetic = add(field_ref("x"), field_ref("y"));
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    # Literal expressions (implicit)
+    # 42, "hello", True
+
+    # Field reference expressions
+    field_a = pc.field("column_a")
+    nested_field = pc.field(("parent", "child"))
+
+    # Function call expressions
+    comparison = pc.field("age") == 25
+    arithmetic = pc.field("x") + pc.field("y")
+    ```
+  </Tab>
+</Tabs>
+
+## Comparison Expressions
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/compute/expression.h>
+
+    using namespace arrow::compute;
+
+    // Equality
+    auto eq_expr = equal(field_ref("status"), literal("active"));
+
+    // Inequality
+    auto ne_expr = not_equal(field_ref("type"), literal("deleted"));
+
+    // Ordering comparisons
+    auto gt_expr = greater(field_ref("price"), literal(100.0));
+    auto gte_expr = greater_equal(field_ref("quantity"), literal(10));
+    auto lt_expr = less(field_ref("age"), literal(65));
+    auto lte_expr = less_equal(field_ref("score"), literal(100));
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow.compute as pc
+
+    # Equality
+    eq_expr = pc.field("status") == "active"
+
+    # Inequality
+    ne_expr = pc.field("type") != "deleted"
+
+    # Ordering comparisons
+    gt_expr = pc.field("price") > 100.0
+    gte_expr = pc.field("quantity") >= 10
+    lt_expr = pc.field("age") < 65
+    lte_expr = pc.field("score") <= 100
+    ```
+  </Tab>
+</Tabs>
+
+## Logical Expressions
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    using namespace arrow::compute;
+
+    // AND - all conditions must be true
+    auto and_expr = and_(
+        greater(field_ref("age"), literal(18)),
+        less(field_ref("age"), literal(65))
+    );
+
+    // OR - at least one condition must be true
+    auto or_expr = or_(
+        equal(field_ref("country"), literal("US")),
+        equal(field_ref("country"), literal("CA"))
+    );
+
+    // NOT - negate a condition
+    auto not_expr = not_(is_null(field_ref("email")));
+
+    // Complex combinations
+    auto complex = and_({
+        or_(equal(field_ref("status"), literal("active")),
+            equal(field_ref("status"), literal("pending"))),
+        greater(field_ref("amount"), literal(0)),
+        not_(is_null(field_ref("user_id")))
+    });
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow.compute as pc
+
+    # AND - all conditions must be true
+    and_expr = (pc.field("age") > 18) & (pc.field("age") < 65)
+
+    # OR - at least one condition must be true
+    or_expr = (pc.field("country") == "US") | (pc.field("country") == "CA")
+
+    # NOT - negate a condition
+    not_expr = ~pc.is_null(pc.field("email"))
+
+    # Complex combinations
+    complex = (
+        ((pc.field("status") == "active") | (pc.field("status") == "pending")) &
+        (pc.field("amount") > 0) &
+        ~pc.is_null(pc.field("user_id"))
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Null Handling
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    using namespace arrow::compute;
+
+    // Check for null values
+    auto null_check = is_null(field_ref("optional_field"));
+
+    // Check for valid (non-null) values
+    auto valid_check = is_valid(field_ref("required_field"));
+
+    // Null-aware comparisons
+    auto with_nulls = and_(
+        is_valid(field_ref("price")),
+        greater(field_ref("price"), literal(100.0))
+    );
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow.compute as pc
+
+    # Check for null values
+    null_check = pc.is_null(pc.field("optional_field"))
+
+    # Check for valid (non-null) values
+    valid_check = pc.is_valid(pc.field("required_field"))
+
+    # Null-aware comparisons
+    with_nulls = (
+        pc.is_valid(pc.field("price")) &
+        (pc.field("price") > 100.0)
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## String Operations
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    using namespace arrow::compute;
+
+    // String matching
+    MatchSubstringOptions match_opts("pattern");
+    auto match_expr = call("match_substring", 
+                          {field_ref("text")},
+                          std::make_shared<MatchSubstringOptions>(match_opts));
+
+    // String starts with
+    auto starts_expr = call("starts_with",
+                           {field_ref("url")},
+                           std::make_shared<MatchSubstringOptions>("https://"));
+
+    // String length
+    auto length_expr = call("utf8_length", {field_ref("name")});
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow.compute as pc
+
+    # String matching
+    match_expr = pc.match_substring(pc.field("text"), "pattern")
+
+    # String starts with
+    starts_expr = pc.starts_with(pc.field("url"), "https://")
+
+    # String length
+    length_expr = pc.utf8_length(pc.field("name"))
+
+    # Case-insensitive matching
+    icase_expr = pc.match_substring(pc.field("text"), "PATTERN", ignore_case=True)
+    ```
+  </Tab>
+</Tabs>
+
+## Set Membership
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    using namespace arrow::compute;
+
+    // Check if value is in a set
+    auto value_set = ArrayFromJSON(arrow::utf8(), 
+                                  R"(["US", "CA", "UK", "AU"])");
+    SetLookupOptions lookup_opts(value_set);
+    
+    auto isin_expr = call("is_in",
+                         {field_ref("country")},
+                         std::make_shared<SetLookupOptions>(lookup_opts));
+
+    // Using is_in helper
+    auto countries = ArrayFromJSON(arrow::utf8(), 
+                                  R"(["US", "CA"])");
+    auto expr = call("is_in", {field_ref("country")},
+                    std::make_shared<SetLookupOptions>(countries));
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    # Check if value is in a set
+    value_set = pa.array(["US", "CA", "UK", "AU"])
+    isin_expr = pc.is_in(pc.field("country"), value_set)
+
+    # Using Python syntax
+    countries = ["US", "CA"]
+    expr = pc.field("country").isin(countries)
+    ```
+  </Tab>
+</Tabs>
+
+## Arithmetic Expressions
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    using namespace arrow::compute;
+
+    // Basic arithmetic
+    auto add_expr = call("add", {field_ref("a"), field_ref("b")});
+    auto sub_expr = call("subtract", {field_ref("total"), field_ref("discount")});
+    auto mul_expr = call("multiply", {field_ref("price"), field_ref("quantity")});
+    auto div_expr = call("divide", {field_ref("sum"), field_ref("count")});
+
+    // Complex calculations
+    auto total_price = call("multiply", {
+        field_ref("unit_price"),
+        call("add", {
+            field_ref("quantity"),
+            literal(1)
+        })
+    });
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow.compute as pc
+
+    # Basic arithmetic
+    add_expr = pc.field("a") + pc.field("b")
+    sub_expr = pc.field("total") - pc.field("discount")
+    mul_expr = pc.field("price") * pc.field("quantity")
+    div_expr = pc.field("sum") / pc.field("count")
+
+    # Complex calculations
+    total_price = pc.field("unit_price") * (pc.field("quantity") + 1)
+    ```
+  </Tab>
+</Tabs>
+
+## Temporal Expressions
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    using namespace arrow::compute;
+
+    // Extract year from timestamp
+    auto year_expr = call("year", {field_ref("timestamp")});
+
+    // Extract month
+    auto month_expr = call("month", {field_ref("timestamp")});
+
+    // Date comparison
+    auto date_filter = and_(
+        greater_equal(field_ref("date"), literal("2023-01-01")),
+        less(field_ref("date"), literal("2024-01-01"))
+    );
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow.compute as pc
+
+    # Extract year from timestamp
+    year_expr = pc.year(pc.field("timestamp"))
+
+    # Extract month
+    month_expr = pc.month(pc.field("timestamp"))
+
+    # Date comparison
+    date_filter = (
+        (pc.field("date") >= "2023-01-01") &
+        (pc.field("date") < "2024-01-01")
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Binding and Execution
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    using namespace arrow::compute;
+
+    // Create an expression
+    auto expr = greater(field_ref("price"), literal(100.0));
+
+    // Bind expression to a schema
+    auto schema = arrow::schema({
+        arrow::field("price", arrow::float64())
+    });
+    
+    auto bound_expr = expr.Bind(*schema).ValueOrDie();
+
+    // Execute expression on data
+    auto batch = arrow::RecordBatchFromJSON(
+        schema,
+        R"([{"price": 150.0}, {"price": 75.0}])"
+    );
+
+    auto result = ExecuteScalarExpression(bound_expr, *batch).ValueOrDie();
+    // Result: [true, false]
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    # Create expression
+    expr = pc.field("price") > 100.0
+
+    # Execute on data
+    batch = pa.RecordBatch.from_pydict(
+        {"price": [150.0, 75.0]},
+        schema=pa.schema([("price", pa.float64())])
+    )
+
+    result = expr.evaluate(batch)
+    # Result: [True, False]
+    ```
+  </Tab>
+</Tabs>
+
+## Expression Simplification
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    using namespace arrow::compute;
+
+    auto expr = and_(
+        equal(field_ref("x"), literal(5)),
+        equal(field_ref("x"), literal(5))  // Redundant
+    );
+
+    // Simplify expression
+    auto simplified = Canonicalize(expr).ValueOrDie();
+
+    // Fold constants
+    auto constant_expr = equal(literal(1), literal(1));
+    auto folded = FoldConstants(constant_expr).ValueOrDie();
+    // Result: literal(true)
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    # Expression simplification is automatic in Python
+    # Redundant conditions are handled by the engine
+    
+    expr = (pc.field("x") == 5) & (pc.field("x") == 5)
+    # Automatically simplified during execution
+    ```
+  </Tab>
+</Tabs>
+
+## Using Expressions with Datasets
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/dataset/api.h>
+
+    using namespace arrow::dataset;
+    using namespace arrow::compute;
+
+    // Create filter expression
+    auto filter = and_(
+        greater(field_ref("year"), literal(2020)),
+        equal(field_ref("status"), literal("completed"))
+    );
+
+    // Apply to scanner
+    auto scanner_builder = dataset->NewScan().ValueOrDie();
+    scanner_builder->Filter(filter);
+    scanner_builder->Project({"id", "amount", "date"});
+    
+    auto scanner = scanner_builder->Finish().ValueOrDie();
+    auto table = scanner->ToTable().ValueOrDie();
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow.dataset as ds
+    import pyarrow.compute as pc
+
+    # Create filter expression
+    filter = (pc.field("year") > 2020) & (pc.field("status") == "completed")
+
+    # Apply to dataset scan
+    table = dataset.to_table(
+        filter=filter,
+        columns=["id", "amount", "date"]
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+1. **Build expressions declaratively**: Let Arrow optimize the execution
+2. **Push filters early**: Apply filters at the dataset level for better performance
+3. **Use strongly-typed expressions**: Ensure type compatibility
+4. **Leverage partition pruning**: Structure filters to utilize partitions
+5. **Combine expressions efficiently**: Use `and_`/`or_` helpers for multiple conditions
+
+## Next Steps
+
+- Learn about [Compute Functions](/guides/compute-functions) for available operations
+- Explore [Working with Datasets](/guides/datasets) for filtering large data
+- See [Acero Query Engine](/guides/acero-query-engine) for complex queries

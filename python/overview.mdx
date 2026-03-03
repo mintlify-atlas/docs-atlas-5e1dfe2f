@@ -1,0 +1,281 @@
+---
+title: Python Library Overview
+description: Introduction to PyArrow, the Python implementation of Apache Arrow
+---
+
+## What is PyArrow?
+
+PyArrow is the Python implementation of Apache Arrow. It provides a cross-language development platform for in-memory data with a standardized columnar memory format for efficient analytic operations on modern hardware.
+
+```python
+import pyarrow as pa
+
+# Display version information
+pa.__version__
+```
+
+## Key Features
+
+PyArrow provides:
+
+- **Columnar Memory Format**: Efficient in-memory representation of tabular data
+- **Zero-Copy Reads**: Share data between processes without serialization overhead
+- **Compute Functions**: Vectorized operations on arrays and tables
+- **File Formats**: Read/write Parquet, CSV, JSON, Feather, ORC
+- **Dataset API**: Work with multi-file, partitioned datasets
+- **Pandas Integration**: Seamless conversion to/from pandas DataFrames
+
+## Core Data Types
+
+### Arrays
+
+Arrays are the fundamental data structure in PyArrow:
+
+```python
+import pyarrow as pa
+
+# Create an array from Python list
+array = pa.array([1, 2, 3, 4, 5])
+print(array)
+# <pyarrow.lib.Int64Array object at ...>
+# [
+#   1,
+#   2,
+#   3,
+#   4,
+#   5
+# ]
+
+# Specify data type explicitly
+array = pa.array([1, 2, 3], type=pa.int8())
+print(array.type)  # int8
+```
+
+### Tables
+
+Tables are collections of named columns:
+
+```python
+import pyarrow as pa
+
+# Create a table from Python dictionaries
+table = pa.table({
+    'id': [1, 2, 3],
+    'name': ['Alice', 'Bob', 'Charlie'],
+    'score': [95.5, 87.3, 92.1]
+})
+
+print(table)
+print(f"Columns: {table.column_names}")
+print(f"Schema: {table.schema}")
+```
+
+## Type System
+
+PyArrow provides a rich type system:
+
+```python
+import pyarrow as pa
+
+# Numeric types
+pa.int8(), pa.int16(), pa.int32(), pa.int64()
+pa.uint8(), pa.uint16(), pa.uint32(), pa.uint64()
+pa.float16(), pa.float32(), pa.float64()
+
+# String and binary
+pa.string(), pa.utf8()  # UTF-8 encoded strings
+pa.binary()  # Variable-length binary
+pa.large_string(), pa.large_binary()  # For large data
+
+# Temporal types
+pa.timestamp('ms')  # Millisecond timestamp
+pa.timestamp('us', tz='UTC')  # With timezone
+pa.date32(), pa.date64()
+pa.time32('s'), pa.time64('us')
+
+# Nested types
+pa.list_(pa.int32())  # List of integers
+pa.struct([('x', pa.int32()), ('y', pa.float64())])  # Struct
+pa.map_(pa.string(), pa.int32())  # Map/dictionary
+
+# Decimal types
+pa.decimal128(10, 2)  # Precision 10, scale 2
+```
+
+## Schemas
+
+Schemas define the structure of tables:
+
+```python
+import pyarrow as pa
+
+# Create a schema
+schema = pa.schema([
+    ('id', pa.int32()),
+    ('name', pa.string()),
+    ('timestamp', pa.timestamp('ms')),
+    pa.field('metadata', pa.map_(pa.string(), pa.string()), nullable=True)
+])
+
+print(schema)
+
+# Access field information
+for field in schema:
+    print(f"{field.name}: {field.type}, nullable={field.nullable}")
+```
+
+## Pandas Integration
+
+<Tabs>
+  <Tab title="Arrow to Pandas">
+    ```python
+    import pyarrow as pa
+    import pandas as pd
+
+    # Create Arrow table
+    table = pa.table({
+        'a': [1, 2, 3],
+        'b': ['x', 'y', 'z']
+    })
+
+    # Convert to pandas DataFrame
+    df = table.to_pandas()
+    print(type(df))  # <class 'pandas.core.frame.DataFrame'>
+    ```
+  </Tab>
+
+  <Tab title="Pandas to Arrow">
+    ```python
+    import pyarrow as pa
+    import pandas as pd
+
+    # Create pandas DataFrame
+    df = pd.DataFrame({
+        'a': [1, 2, 3],
+        'b': ['x', 'y', 'z']
+    })
+
+    # Convert to Arrow table
+    table = pa.Table.from_pandas(df)
+    print(table.schema)
+    ```
+  </Tab>
+
+  <Tab title="Zero-Copy">
+    ```python
+    import pyarrow as pa
+    import pandas as pd
+
+    # Zero-copy read from pandas
+    df = pd.DataFrame({'a': [1, 2, 3]})
+    table = pa.Table.from_pandas(df, preserve_index=False)
+
+    # Access underlying Arrow data without copying
+    arrow_array = table['a']
+    ```
+  </Tab>
+</Tabs>
+
+## Memory Management
+
+PyArrow provides fine-grained memory control:
+
+```python
+import pyarrow as pa
+
+# Get default memory pool
+pool = pa.default_memory_pool()
+print(f"Bytes allocated: {pool.bytes_allocated()}")
+print(f"Backend: {pool.backend_name}")
+
+# Create a custom memory pool
+from pyarrow import jemalloc_memory_pool
+if pa.jemalloc_memory_pool:
+    custom_pool = pa.jemalloc_memory_pool()
+    pa.set_memory_pool(custom_pool)
+```
+
+<Note>
+  PyArrow uses reference counting for memory management. Memory is automatically freed when objects go out of scope.
+</Note>
+
+## System Information
+
+Check your PyArrow installation:
+
+```python
+import pyarrow as pa
+
+# Show detailed version and build information
+pa.show_versions()
+
+# Show full system information
+pa.show_info()
+```
+
+Output includes:
+- PyArrow and Arrow C++ versions
+- Compiler information
+- Available modules (parquet, dataset, etc.)
+- Filesystem support (S3, GCS, HDFS)
+- Compression codecs
+
+## Performance Tips
+
+<Tip>
+  **Use PyArrow for:**
+  - Large datasets that don't fit in memory (with Dataset API)
+  - Zero-copy data sharing between processes
+  - Efficient columnar operations
+  - Fast serialization/deserialization
+  - Integration with pandas, NumPy, and other libraries
+</Tip>
+
+## Next Steps
+
+- [Installation](/python/installation) - Set up PyArrow in your environment
+- [Tables and Arrays](/python/tables-arrays) - Work with columnar data structures
+- [Compute Functions](/python/compute) - Perform vectorized operations
+- [Dataset API](/python/dataset) - Handle multi-file datasets
+- [Parquet Files](/python/parquet) - Read and write Parquet format
+
+## Common Patterns
+
+### Creating Sample Data
+
+```python
+import pyarrow as pa
+from datetime import datetime
+
+# Create a table with various types
+table = pa.table({
+    'id': pa.array([1, 2, 3], type=pa.int32()),
+    'timestamp': pa.array([datetime.now()] * 3),
+    'values': pa.array([[1, 2], [3, 4], [5, 6]], type=pa.list_(pa.int64())),
+    'metadata': pa.array([{'key': 'value'}] * 3, type=pa.map_(pa.string(), pa.string()))
+})
+```
+
+### Handling Nulls
+
+```python
+import pyarrow as pa
+
+# Arrays can contain null values
+array = pa.array([1, None, 3, None, 5])
+print(f"Null count: {array.null_count}")
+print(f"Is valid: {array.is_valid()}")
+
+# Check individual elements
+for i in range(len(array)):
+    if array[i].is_valid:
+        print(f"Index {i}: {array[i].as_py()}")
+    else:
+        print(f"Index {i}: NULL")
+```
+
+## Reference
+
+- **Official Documentation**: https://arrow.apache.org/docs/python/
+- **API Reference**: https://arrow.apache.org/docs/python/api.html
+- **GitHub**: https://github.com/apache/arrow

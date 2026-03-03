@@ -1,0 +1,272 @@
+---
+title: Compute Functions
+description: Learn how to use Apache Arrow compute functions for efficient data transformations and calculations
+---
+
+Apache Arrow provides a comprehensive set of compute functions for performing operations on arrays and scalars. These functions support vectorized operations for high performance.
+
+## Function Categories
+
+Arrow compute functions are organized into several categories:
+
+- **Scalar functions**: Element-wise operations that produce output of the same size as input
+- **Vector functions**: Operations that may produce different-sized output
+- **Aggregate functions**: Functions that compute summary statistics
+- **Hash aggregate functions**: Grouped aggregations using hash tables
+
+## Using Compute Functions
+
+### Arithmetic Operations
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/api.h>
+    #include <arrow/compute/api.h>
+
+    // Add two arrays
+    auto left = arrow::ArrayFromJSON(arrow::int32(), "[1, 2, 3, 4, 5]");
+    auto right = arrow::ArrayFromJSON(arrow::int32(), "[10, 20, 30, 40, 50]");
+
+    // Perform addition
+    arrow::compute::ArithmeticOptions options;
+    options.check_overflow = false;
+    
+    auto result = arrow::compute::Add(left, right, options);
+    // Result: [11, 22, 33, 44, 55]
+
+    // Multiply arrays
+    auto product = arrow::compute::Multiply(left, right, options);
+    // Result: [10, 40, 90, 160, 250]
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    # Create arrays
+    left = pa.array([1, 2, 3, 4, 5])
+    right = pa.array([10, 20, 30, 40, 50])
+
+    # Perform addition
+    result = pc.add(left, right)
+    # Result: [11, 22, 33, 44, 55]
+
+    # Multiply arrays
+    product = pc.multiply(left, right)
+    # Result: [10, 40, 90, 160, 250]
+    ```
+  </Tab>
+</Tabs>
+
+### Comparison and Filtering
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/compute/api.h>
+
+    auto values = arrow::ArrayFromJSON(arrow::int32(), "[5, 12, 8, 20, 3]");
+    
+    // Filter values greater than 10
+    auto filter_expr = arrow::compute::greater(
+        arrow::compute::field_ref("value"),
+        arrow::compute::literal(10)
+    );
+
+    // IsIn check
+    arrow::compute::SetLookupOptions lookup_opts(
+        arrow::ArrayFromJSON(arrow::int32(), "[5, 8, 20]")
+    );
+    auto is_in_result = arrow::compute::IsIn(values, lookup_opts);
+    // Result: [true, false, true, true, false]
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow.compute as pc
+
+    values = pa.array([5, 12, 8, 20, 3])
+    
+    # Filter values greater than 10
+    result = pc.greater(values, 10)
+    # Result: [False, True, False, True, False]
+
+    # IsIn check
+    value_set = pa.array([5, 8, 20])
+    is_in_result = pc.is_in(values, value_set)
+    # Result: [True, False, True, True, False]
+    ```
+  </Tab>
+</Tabs>
+
+### Aggregate Functions
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/compute/api_aggregate.h>
+
+    auto data = arrow::ArrayFromJSON(arrow::float64(), 
+                                     "[1.5, 2.3, 3.7, 4.2, 5.8]");
+
+    // Compute mean
+    arrow::compute::ScalarAggregateOptions agg_opts;
+    agg_opts.skip_nulls = true;
+    agg_opts.min_count = 1;
+    
+    auto mean_result = arrow::compute::Mean(data, agg_opts);
+    // Result: 3.5
+
+    // Compute sum
+    auto sum_result = arrow::compute::Sum(data, agg_opts);
+    // Result: 17.5
+
+    // Compute min/max
+    auto minmax_result = arrow::compute::MinMax(data, agg_opts);
+    // Result: {min: 1.5, max: 5.8}
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow.compute as pc
+
+    data = pa.array([1.5, 2.3, 3.7, 4.2, 5.8])
+
+    # Compute mean
+    mean_result = pc.mean(data)
+    # Result: 3.5
+
+    # Compute sum
+    sum_result = pc.sum(data)
+    # Result: 17.5
+
+    # Compute min/max
+    minmax_result = pc.min_max(data)
+    # Result: {'min': 1.5, 'max': 5.8}
+    ```
+  </Tab>
+</Tabs>
+
+### String Operations
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/compute/api_scalar.h>
+
+    auto strings = arrow::ArrayFromJSON(arrow::utf8(), 
+                                       "[\"hello\", \"world\", \"arrow\"]");
+
+    // Match substring
+    arrow::compute::MatchSubstringOptions match_opts("or");
+    auto match_result = arrow::compute::CallFunction(
+        "match_substring", {strings}, &match_opts
+    );
+    // Result: [false, true, true]
+
+    // String length
+    auto length_result = arrow::compute::CallFunction(
+        "utf8_length", {strings}
+    );
+    // Result: [5, 5, 5]
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow.compute as pc
+
+    strings = pa.array(["hello", "world", "arrow"])
+
+    # Match substring
+    match_result = pc.match_substring(strings, "or")
+    # Result: [False, True, True]
+
+    # String length
+    length_result = pc.utf8_length(strings)
+    # Result: [5, 5, 5]
+    ```
+  </Tab>
+</Tabs>
+
+## Function Registry
+
+All compute functions are registered in a global function registry:
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/compute/registry.h>
+
+    // Get the default function registry
+    auto registry = arrow::compute::GetFunctionRegistry();
+
+    // Look up a function by name
+    auto func = registry->GetFunction("add");
+
+    // Execute using the registry
+    arrow::Datum left = arrow::ArrayFromJSON(arrow::int32(), "[1, 2, 3]");
+    arrow::Datum right = arrow::ArrayFromJSON(arrow::int32(), "[4, 5, 6]");
+    
+    auto result = arrow::compute::CallFunction(
+        "add", {left, right}, registry
+    );
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import pyarrow.compute as pc
+
+    # List all available functions
+    func_names = pc.list_functions()
+    print(f"Total functions: {len(func_names)}")
+
+    # Get function by name
+    func = pc.get_function("add")
+    print(f"Function: {func}")
+    print(f"Kind: {func.kind}")
+    ```
+  </Tab>
+</Tabs>
+
+## Custom Execution Context
+
+You can customize function execution with an `ExecContext`:
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include <arrow/compute/exec.h>
+
+    // Create custom execution context with specific memory pool
+    arrow::MemoryPool* pool = arrow::default_memory_pool();
+    arrow::compute::ExecContext ctx(pool);
+
+    // Use custom context for operations
+    auto result = arrow::compute::Add(left, right, 
+                                     arrow::compute::ArithmeticOptions(),
+                                     &ctx);
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    # Python automatically uses the default context
+    # Custom memory pools can be configured at the module level
+    result = pc.add(left, right)
+    ```
+  </Tab>
+</Tabs>
+
+## Performance Tips
+
+1. **Use vectorized operations**: Compute functions are optimized for vectorized execution
+2. **Batch processing**: Process data in large batches to amortize overhead
+3. **Avoid repeated allocations**: Reuse buffers when possible
+4. **Choose appropriate options**: Configure `skip_nulls`, `check_overflow` based on your data
+
+## Next Steps
+
+- Learn about [Expressions and Filters](/guides/expressions) for building complex operations
+- Explore [Acero Query Engine](/guides/acero-query-engine) for query execution
+- See [Working with Datasets](/guides/datasets) for large-scale data processing

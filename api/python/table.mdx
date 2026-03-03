@@ -1,0 +1,510 @@
+---
+title: Table Classes
+description: Apache Arrow table and record batch classes for tabular data
+---
+
+## Table
+
+A Table is a two-dimensional dataset with chunked arrays for columns.
+
+```python
+import pyarrow as pa
+
+data = {
+    'n_legs': [2, 4, 5, 100],
+    'animals': ['Flamingo', 'Horse', 'Brittle stars', 'Centipede']
+}
+table = pa.table(data)
+print(table)
+```
+
+### table()
+
+Create a pyarrow.Table from Python data.
+
+```python
+pa.table(data, schema=None, metadata=None)
+```
+
+<ParamField path="data" type="dict, list, pandas.DataFrame">
+  Dictionary of column names to arrays/lists, list of arrays, or pandas DataFrame.
+</ParamField>
+
+<ParamField path="schema" type="pyarrow.Schema" default="None">
+  If provided, dictates the schema of the table. Otherwise inferred.
+</ParamField>
+
+<ParamField path="metadata" type="dict" default="None">
+  Optional metadata for the schema.
+</ParamField>
+
+<ResponseField name="table" type="pyarrow.Table">
+  A Table constructed from the input data.
+</ResponseField>
+
+### Properties
+
+#### schema
+
+Return the table's schema.
+
+```python
+table = pa.table({'a': [1, 2], 'b': [3, 4]})
+print(table.schema)
+# a: int64
+# b: int64
+```
+
+<ResponseField name="schema" type="pyarrow.Schema">
+  The table's schema.
+</ResponseField>
+
+#### num_rows
+
+Number of rows in the table.
+
+```python
+table = pa.table({'a': [1, 2, 3]})
+print(table.num_rows)  # 3
+```
+
+<ResponseField name="num_rows" type="int">
+  The number of rows.
+</ResponseField>
+
+#### num_columns
+
+Number of columns in the table.
+
+```python
+table = pa.table({'a': [1, 2], 'b': [3, 4]})
+print(table.num_columns)  # 2
+```
+
+<ResponseField name="num_columns" type="int">
+  The number of columns.
+</ResponseField>
+
+#### column_names
+
+List of column names.
+
+```python
+table = pa.table({'a': [1, 2], 'b': [3, 4]})
+print(table.column_names)  # ['a', 'b']
+```
+
+<ResponseField name="column_names" type="list of str">
+  The column names as a list.
+</ResponseField>
+
+#### columns
+
+List of all columns as ChunkedArray objects.
+
+```python
+table = pa.table({'a': [1, 2], 'b': [3, 4]})
+for col in table.columns:
+    print(col)
+```
+
+<ResponseField name="columns" type="list of ChunkedArray">
+  The columns as ChunkedArray objects.
+</ResponseField>
+
+### Methods
+
+#### column()
+
+Select a column by name or index.
+
+```python
+table.column(i)
+```
+
+<ParamField path="i" type="int or str">
+  Column index (int) or name (str).
+</ParamField>
+
+<ResponseField name="column" type="pyarrow.ChunkedArray">
+  The selected column.
+</ResponseField>
+
+#### select()
+
+Select columns by names.
+
+```python
+table.select(columns)
+```
+
+<ParamField path="columns" type="list of str">
+  List of column names to select.
+</ParamField>
+
+<ResponseField name="table" type="pyarrow.Table">
+  A new table with only the selected columns.
+</ResponseField>
+
+#### slice()
+
+Compute a zero-copy slice of this table.
+
+```python
+table.slice(offset=0, length=None)
+```
+
+<ParamField path="offset" type="int" default="0">
+  Offset from start of table to slice.
+</ParamField>
+
+<ParamField path="length" type="int" default="None">
+  Length of slice (default is until end of table).
+</ParamField>
+
+<ResponseField name="table" type="pyarrow.Table">
+  A zero-copy slice of the table.
+</ResponseField>
+
+#### filter()
+
+Filter rows of the table using a boolean selection filter.
+
+```python
+table.filter(mask, null_selection_behavior='drop')
+```
+
+<ParamField path="mask" type="Array or compute.Expression">
+  Boolean array or expression to filter rows.
+</ParamField>
+
+<ParamField path="null_selection_behavior" type="str" default="'drop'">
+  How to handle null values in mask. Options: 'drop', 'emit_null'.
+</ParamField>
+
+<ResponseField name="table" type="pyarrow.Table">
+  A filtered table.
+</ResponseField>
+
+#### take()
+
+Select rows by indices.
+
+```python
+table.take(indices)
+```
+
+<ParamField path="indices" type="Array or list">
+  Indices of rows to select.
+</ParamField>
+
+<ResponseField name="table" type="pyarrow.Table">
+  A table with selected rows.
+</ResponseField>
+
+#### sort_by()
+
+Sort table by one or more columns.
+
+```python
+table.sort_by(sorting, **kwargs)
+```
+
+<ParamField path="sorting" type="str, list of (name, order) tuples">
+  Column name or list of (name, order) tuples where order is 'ascending' or 'descending'.
+</ParamField>
+
+<ResponseField name="table" type="pyarrow.Table">
+  A sorted table.
+</ResponseField>
+
+#### group_by()
+
+Group table by one or more columns.
+
+```python
+table.group_by(keys)
+```
+
+<ParamField path="keys" type="str or list of str">
+  Column name(s) to group by.
+</ParamField>
+
+<ResponseField name="grouped" type="pyarrow.TableGroupBy">
+  A grouped table object that can be aggregated.
+</ResponseField>
+
+#### to_pydict()
+
+Convert table to a Python dictionary.
+
+```python
+table = pa.table({'a': [1, 2], 'b': [3, 4]})
+py_dict = table.to_pydict()
+print(py_dict)  # {'a': [1, 2], 'b': [3, 4]}
+```
+
+<ResponseField name="dict" type="dict">
+  A dictionary with column names as keys and Python lists as values.
+</ResponseField>
+
+#### to_pandas()
+
+Convert table to a pandas DataFrame.
+
+```python
+table.to_pandas(self_destruct=False, **kwargs)
+```
+
+<ParamField path="self_destruct" type="bool" default="False">
+  If True, destroy the source table to save memory.
+</ParamField>
+
+<ResponseField name="dataframe" type="pandas.DataFrame">
+  A pandas DataFrame with the table data.
+</ResponseField>
+
+#### add_column()
+
+Add a column to the table.
+
+```python
+table.add_column(i, field_, column)
+```
+
+<ParamField path="i" type="int">
+  Index where to insert the column.
+</ParamField>
+
+<ParamField path="field_" type="str or Field">
+  Column name or Field object.
+</ParamField>
+
+<ParamField path="column" type="Array or ChunkedArray">
+  Column data.
+</ParamField>
+
+<ResponseField name="table" type="pyarrow.Table">
+  A new table with the added column.
+</ResponseField>
+
+#### remove_column()
+
+Remove a column from the table.
+
+```python
+table.remove_column(i)
+```
+
+<ParamField path="i" type="int">
+  Index of column to remove.
+</ParamField>
+
+<ResponseField name="table" type="pyarrow.Table">
+  A new table without the specified column.
+</ResponseField>
+
+#### rename_columns()
+
+Rename columns in the table.
+
+```python
+table.rename_columns(names)
+```
+
+<ParamField path="names" type="list of str">
+  New column names.
+</ParamField>
+
+<ResponseField name="table" type="pyarrow.Table">
+  A new table with renamed columns.
+</ResponseField>
+
+## RecordBatch
+
+A RecordBatch is a collection of equal-length arrays.
+
+```python
+import pyarrow as pa
+
+data = [
+    pa.array([1, 2, 3]),
+    pa.array(['a', 'b', 'c'])
+]
+schema = pa.schema([('nums', pa.int64()), ('letters', pa.string())])
+batch = pa.record_batch(data, schema=schema)
+print(batch)
+```
+
+### record_batch()
+
+Create a RecordBatch from arrays or a dictionary.
+
+```python
+pa.record_batch(data, schema=None, metadata=None)
+```
+
+<ParamField path="data" type="list of Array, dict">
+  List of arrays or dictionary of column names to arrays.
+</ParamField>
+
+<ParamField path="schema" type="pyarrow.Schema" default="None">
+  Schema defining the batch structure.
+</ParamField>
+
+<ParamField path="metadata" type="dict" default="None">
+  Optional metadata.
+</ParamField>
+
+<ResponseField name="batch" type="pyarrow.RecordBatch">
+  A RecordBatch with the specified data.
+</ResponseField>
+
+### Properties
+
+#### schema
+
+The schema of the record batch.
+
+<ResponseField name="schema" type="pyarrow.Schema">
+  The batch's schema.
+</ResponseField>
+
+#### num_rows
+
+Number of rows in the batch.
+
+<ResponseField name="num_rows" type="int">
+  The number of rows.
+</ResponseField>
+
+#### num_columns
+
+Number of columns in the batch.
+
+<ResponseField name="num_columns" type="int">
+  The number of columns.
+</ResponseField>
+
+### Methods
+
+#### to_pydict()
+
+Convert to a Python dictionary.
+
+<ResponseField name="dict" type="dict">
+  Dictionary with column names as keys.
+</ResponseField>
+
+#### to_pandas()
+
+Convert to a pandas DataFrame.
+
+<ResponseField name="dataframe" type="pandas.DataFrame">
+  A pandas DataFrame.
+</ResponseField>
+
+## Utility Functions
+
+### concat_tables()
+
+Concatenate multiple tables into one.
+
+```python
+pa.concat_tables(tables, promote=False, memory_pool=None)
+```
+
+<ParamField path="tables" type="list of Table">
+  Tables to concatenate.
+</ParamField>
+
+<ParamField path="promote" type="bool" default="False">
+  If True, promote types to the widest type.
+</ParamField>
+
+<ParamField path="memory_pool" type="pyarrow.MemoryPool" default="None">
+  Memory pool for allocation.
+</ParamField>
+
+<ResponseField name="table" type="pyarrow.Table">
+  Concatenated table.
+</ResponseField>
+
+### concat_batches()
+
+Concatenate multiple record batches.
+
+```python
+pa.concat_batches(batches, memory_pool=None)
+```
+
+<ParamField path="batches" type="list of RecordBatch">
+  Record batches to concatenate.
+</ParamField>
+
+<ParamField path="memory_pool" type="pyarrow.MemoryPool" default="None">
+  Memory pool for allocation.
+</ParamField>
+
+<ResponseField name="batch" type="pyarrow.RecordBatch">
+  Concatenated record batch.
+</ResponseField>
+
+## RecordBatchReader
+
+Streaming reader for record batches.
+
+```python
+import pyarrow as pa
+
+# Create a reader from batches
+batches = [pa.record_batch([[1, 2], [3, 4]], names=['a', 'b'])]
+reader = pa.RecordBatchReader.from_batches(batches[0].schema, batches)
+
+for batch in reader:
+    print(batch)
+```
+
+### from_batches()
+
+Create a reader from a list of record batches.
+
+```python
+RecordBatchReader.from_batches(schema, batches)
+```
+
+<ParamField path="schema" type="pyarrow.Schema">
+  Schema of the batches.
+</ParamField>
+
+<ParamField path="batches" type="iterable of RecordBatch">
+  Batches to read.
+</ParamField>
+
+<ResponseField name="reader" type="pyarrow.RecordBatchReader">
+  A batch reader.
+</ResponseField>
+
+### read_all()
+
+Read all batches and return as a Table.
+
+```python
+reader.read_all()
+```
+
+<ResponseField name="table" type="pyarrow.Table">
+  All batches combined into a table.
+</ResponseField>
+
+### read_next_batch()
+
+Read the next batch.
+
+```python
+reader.read_next_batch()
+```
+
+<ResponseField name="batch" type="pyarrow.RecordBatch">
+  The next batch, or raises StopIteration if exhausted.
+</ResponseField>

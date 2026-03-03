@@ -1,0 +1,429 @@
+---
+title: Data Type Classes
+description: API reference for Apache Arrow C++ data type classes
+---
+
+# Data Type Classes
+
+Data types in Arrow represent the logical types of data. All data types are immutable.
+
+## Base Classes
+
+### DataType
+
+Base class for all data types.
+
+```cpp
+class DataType
+```
+
+<ResponseField name="id" type="Type::type">
+  Returns the type category
+</ResponseField>
+
+<ResponseField name="name" type="std::string">
+  Returns a string name of the type, omitting any child fields
+</ResponseField>
+
+<ResponseField name="ToString" type="std::string">
+  <ParamField path="show_metadata" type="bool">
+    Whether to include metadata in the output
+  </ParamField>
+  
+  Returns a string representation of the type, including any children
+</ResponseField>
+
+<ResponseField name="Equals" type="bool">
+  <ParamField path="other" type="const DataType&" required>
+    Type to compare with
+  </ParamField>
+  <ParamField path="check_metadata" type="bool">
+    Whether to compare metadata
+  </ParamField>
+  
+  Returns whether the types are equal. Types that are logically convertible are NOT considered equal
+</ResponseField>
+
+<ResponseField name="num_fields" type="int">
+  Returns the number of children fields associated with this type
+</ResponseField>
+
+<ResponseField name="field" type="std::shared_ptr<Field>">
+  <ParamField path="i" type="int" required>
+    Field index
+  </ParamField>
+  
+  Returns the child field at index i
+</ResponseField>
+
+---
+
+## Numeric Types
+
+### Integer Types
+
+Fixed-width integer types.
+
+```cpp
+class Int8Type;    // Signed 8-bit integer
+class Int16Type;   // Signed 16-bit integer
+class Int32Type;   // Signed 32-bit integer
+class Int64Type;   // Signed 64-bit integer
+class UInt8Type;   // Unsigned 8-bit integer
+class UInt16Type;  // Unsigned 16-bit integer
+class UInt32Type;  // Unsigned 32-bit integer
+class UInt64Type;  // Unsigned 64-bit integer
+```
+
+Each type provides:
+
+<ResponseField name="type_id" type="Type::type">
+  Static constexpr type identifier
+</ResponseField>
+
+<ResponseField name="c_type" type="typename">
+  Corresponding C type (int8_t, int16_t, etc.)
+</ResponseField>
+
+### Floating Point Types
+
+```cpp
+class HalfFloatType;  // 16-bit floating-point
+class FloatType;      // 32-bit floating-point (C float)
+class DoubleType;     // 64-bit floating-point (C double)
+```
+
+### Boolean Type
+
+```cpp
+class BooleanType;    // Boolean (1-bit)
+```
+
+### Decimal Types
+
+Fixed-point decimal types with specified precision and scale.
+
+```cpp
+class Decimal32Type;   // 32-bit decimal (max precision: 9)
+class Decimal64Type;   // 64-bit decimal (max precision: 18)
+class Decimal128Type;  // 128-bit decimal (max precision: 38)
+class Decimal256Type;  // 256-bit decimal (max precision: 76)
+```
+
+<ResponseField name="Decimal128Type" type="">
+  <ParamField path="precision" type="int32_t" required>
+    Number of significant digits (1-38)
+  </ParamField>
+  <ParamField path="scale" type="int32_t" required>
+    Number of digits after decimal point (can be negative)
+  </ParamField>
+  
+  Constructs a Decimal128Type. Aborts on invalid input
+</ResponseField>
+
+<ResponseField name="Make" type="Result<std::shared_ptr<DataType>>">
+  <ParamField path="precision" type="int32_t" required>
+    Number of significant digits
+  </ParamField>
+  <ParamField path="scale" type="int32_t" required>
+    Number of digits after decimal point
+  </ParamField>
+  
+  Constructs a Decimal128Type. Returns error on invalid input
+</ResponseField>
+
+<ResponseField name="precision" type="int32_t">
+  Returns the precision (number of significant digits)
+</ResponseField>
+
+<ResponseField name="scale" type="int32_t">
+  Returns the scale (number of digits after decimal point)
+</ResponseField>
+
+---
+
+## Binary Types
+
+### BinaryType
+
+Variable-size binary data with 32-bit offsets.
+
+```cpp
+class BinaryType;
+```
+
+<ResponseField name="offset_type" type="int32_t">
+  Type used for offsets
+</ResponseField>
+
+### StringType
+
+Variable-size UTF-8 string data with 32-bit offsets.
+
+```cpp
+class StringType : public BinaryType;
+```
+
+### LargeBinaryType
+
+Variable-size binary data with 64-bit offsets.
+
+```cpp
+class LargeBinaryType;
+```
+
+### LargeStringType
+
+Variable-size UTF-8 string data with 64-bit offsets.
+
+```cpp
+class LargeStringType : public LargeBinaryType;
+```
+
+### BinaryViewType
+
+Variable-size binary data with inline optimization for small values (12 bytes or fewer).
+
+```cpp
+class BinaryViewType;
+```
+
+Small strings are stored inline, while larger strings are stored in separate buffers with a 4-byte prefix cached inline.
+
+### StringViewType
+
+Variable-size UTF-8 string data with inline optimization.
+
+```cpp
+class StringViewType : public BinaryViewType;
+```
+
+### FixedSizeBinaryType
+
+Fixed-size binary data.
+
+```cpp
+class FixedSizeBinaryType;
+```
+
+<ResponseField name="FixedSizeBinaryType" type="">
+  <ParamField path="byte_width" type="int32_t" required>
+    Fixed byte width of each value
+  </ParamField>
+  
+  Constructs a FixedSizeBinaryType
+</ResponseField>
+
+<ResponseField name="byte_width" type="int32_t">
+  Returns the fixed byte width
+</ResponseField>
+
+---
+
+## Nested Types
+
+### ListType
+
+Variable-length list type with 32-bit offsets.
+
+```cpp
+class ListType : public BaseListType;
+```
+
+<ResponseField name="ListType" type="">
+  <ParamField path="value_type" type="std::shared_ptr<DataType>" required>
+    Type of list elements
+  </ParamField>
+  
+  Constructs a ListType. List can contain any other logical value type
+</ResponseField>
+
+<ResponseField name="value_type" type="std::shared_ptr<DataType>">
+  Returns the list element type
+</ResponseField>
+
+<ResponseField name="value_field" type="std::shared_ptr<Field>">
+  Returns the list element field
+</ResponseField>
+
+### LargeListType
+
+Variable-length list type with 64-bit offsets.
+
+```cpp
+class LargeListType : public BaseListType;
+```
+
+### FixedSizeListType
+
+Fixed-size list type where all lists have the same length.
+
+```cpp
+class FixedSizeListType : public BaseListType;
+```
+
+<ResponseField name="FixedSizeListType" type="">
+  <ParamField path="value_type" type="std::shared_ptr<DataType>" required>
+    Type of list elements
+  </ParamField>
+  <ParamField path="list_size" type="int32_t" required>
+    Fixed length of each list
+  </ParamField>
+  
+  Constructs a FixedSizeListType
+</ResponseField>
+
+<ResponseField name="list_size" type="int32_t">
+  Returns the fixed list size
+</ResponseField>
+
+### StructType
+
+Struct type with named fields.
+
+```cpp
+class StructType : public NestedType;
+```
+
+<ResponseField name="StructType" type="">
+  <ParamField path="fields" type="const FieldVector&" required>
+    Vector of struct fields
+  </ParamField>
+  
+  Constructs a StructType
+</ResponseField>
+
+<ResponseField name="GetFieldByName" type="std::shared_ptr<Field>">
+  <ParamField path="name" type="const std::string&" required>
+    Field name
+  </ParamField>
+  
+  Returns the field with the given name, or nullptr if not found
+</ResponseField>
+
+<ResponseField name="GetFieldIndex" type="int">
+  <ParamField path="name" type="const std::string&" required>
+    Field name
+  </ParamField>
+  
+  Returns the field index, or -1 if not found or if there are multiple fields with the same name
+</ResponseField>
+
+<ResponseField name="AddField" type="Result<std::shared_ptr<StructType>>">
+  <ParamField path="i" type="int" required>
+    Position to insert field
+  </ParamField>
+  <ParamField path="field" type="const std::shared_ptr<Field>&" required>
+    Field to add
+  </ParamField>
+  
+  Creates a new StructType with field added at given index
+</ResponseField>
+
+### MapType
+
+Map type representing key-value pairs.
+
+```cpp
+class MapType : public ListType;
+```
+
+<ResponseField name="MapType" type="">
+  <ParamField path="key_type" type="std::shared_ptr<DataType>" required>
+    Type of map keys
+  </ParamField>
+  <ParamField path="item_type" type="std::shared_ptr<DataType>" required>
+    Type of map values
+  </ParamField>
+  <ParamField path="keys_sorted" type="bool">
+    Whether keys are sorted
+  </ParamField>
+  
+  Constructs a MapType. Maps can be recursively nested
+</ResponseField>
+
+<ResponseField name="key_type" type="std::shared_ptr<DataType>">
+  Returns the map key type
+</ResponseField>
+
+<ResponseField name="item_type" type="std::shared_ptr<DataType>">
+  Returns the map item (value) type
+</ResponseField>
+
+<ResponseField name="keys_sorted" type="bool">
+  Returns whether keys are sorted
+</ResponseField>
+
+---
+
+## Field
+
+Combination of a field name and data type, with optional metadata.
+
+```cpp
+class Field;
+```
+
+<ResponseField name="Field" type="">
+  <ParamField path="name" type="std::string" required>
+    Field name
+  </ParamField>
+  <ParamField path="type" type="std::shared_ptr<DataType>" required>
+    Field data type
+  </ParamField>
+  <ParamField path="nullable" type="bool">
+    Whether field can contain nulls (default: true)
+  </ParamField>
+  <ParamField path="metadata" type="std::shared_ptr<const KeyValueMetadata>">
+    Optional metadata
+  </ParamField>
+  
+  Constructs a Field
+</ResponseField>
+
+<ResponseField name="name" type="const std::string&">
+  Returns the field name
+</ResponseField>
+
+<ResponseField name="type" type="std::shared_ptr<DataType>">
+  Returns the field data type
+</ResponseField>
+
+<ResponseField name="nullable" type="bool">
+  Returns whether the field is nullable
+</ResponseField>
+
+<ResponseField name="WithType" type="std::shared_ptr<Field>">
+  <ParamField path="type" type="std::shared_ptr<DataType>" required>
+    New type
+  </ParamField>
+  
+  Returns a copy of this field with the replaced type
+</ResponseField>
+
+<ResponseField name="WithName" type="std::shared_ptr<Field>">
+  <ParamField path="name" type="const std::string&" required>
+    New name
+  </ParamField>
+  
+  Returns a copy of this field with the replaced name
+</ResponseField>
+
+<ResponseField name="WithMetadata" type="std::shared_ptr<Field>">
+  <ParamField path="metadata" type="std::shared_ptr<const KeyValueMetadata>" required>
+    New metadata
+  </ParamField>
+  
+  Returns a copy of this field with the given metadata attached
+</ResponseField>
+
+<ResponseField name="Equals" type="bool">
+  <ParamField path="other" type="const Field&" required>
+    Field to compare with
+  </ParamField>
+  <ParamField path="check_metadata" type="bool">
+    Whether to check metadata equality
+  </ParamField>
+  
+  Indicates if fields are equal
+</ResponseField>

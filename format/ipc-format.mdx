@@ -1,0 +1,646 @@
+---
+title: Inter-Process Communication Format
+description: Arrow IPC protocol for serialization and zero-copy data exchange between processes
+---
+
+## Overview
+
+The Arrow **IPC (Inter-Process Communication) format** enables zero-copy data exchange between processes and persistence to storage. The protocol serializes Arrow record batches into binary payloads that can be reconstructed without memory copying.
+
+**Key Features:**
+- Zero-copy reconstruction of arrays
+- Streaming and random-access file formats
+- Dictionary encoding support
+- Optional compression (LZ4, ZSTD)
+- Language-agnostic using Flatbuffers
+
+<Note>
+The IPC format uses Flatbuffers for metadata serialization and defines binary message structures for efficient data exchange.
+</Note>
+
+## Core Concepts
+
+### Record Batch
+
+The primitive unit of serialized data. A record batch is an ordered collection of arrays (fields) with:
+- Same length across all fields
+- Potentially different data types
+- A shared schema defining field names and types
+
+### Message Types
+
+The IPC protocol uses three message types:
+
+1. **Schema** - Defines the structure of record batches
+2. **RecordBatch** - Contains actual data buffers
+3. **DictionaryBatch** - Contains dictionary data for encoded fields
+
+## Encapsulated Message Format
+
+All IPC messages use a standardized encapsulation format:
+
+```text
+<continuation: 0xFFFFFFFF>  (4 bytes)
+<metadata_size: int32>       (4 bytes)
+<metadata_flatbuffer>        (variable, padded to 8-byte boundary)
+<padding>                    (to 8-byte boundary)
+<message body>               (variable, multiple of 8 bytes)
+```
+
+### Message Components
+
+<AccordionGroup>
+  <Accordion title="Continuation Indicator">
+    - 4-byte value: `0xFFFFFFFF`
+    - Indicates a valid message follows
+    - Introduced in v0.15.0 for Flatbuffers alignment
+  </Accordion>
+  
+  <Accordion title="Metadata Size">
+    - 4-byte little-endian integer
+    - Includes size of flatbuffer plus padding
+    - Allows readers to skip to message body
+  </Accordion>
+  
+  <Accordion title="Metadata Flatbuffer">
+    Contains:
+    - Version number
+    - Message type (Schema, RecordBatch, DictionaryBatch)
+    - Body size
+    - Custom metadata (key-value pairs)
+  </Accordion>
+  
+  <Accordion title="Message Body">
+    - Flat sequence of memory buffers
+    - End-to-end layout with 8-byte alignment
+    - Optional compression per buffer
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+The complete serialized message must be a multiple of 8 bytes to enable message relocation between streams.
+</Warning>
+
+## Schema Message
+
+The Schema message contains type metadata without data buffers.
+
+```flatbuffers
+table Schema {
+  endianness: Endianness = Little;
+  fields: [Field];
+  custom_metadata: [KeyValue];
+  features: [Feature];
+}
+```
+
+### Field Structure
+
+Each Field contains:
+- **name**: Field identifier (UTF-8 string)
+- **nullable**: Whether field can contain nulls
+- **type**: Data type definition
+- **dictionary**: Dictionary encoding metadata (if applicable)
+- **children**: Child fields for nested types
+- **custom_metadata**: Application-specific metadata
+
+**Example Schema:**
+
+```text
+Schema:
+  col1: Struct<a: Int32, b: List<item: Int64>, c: Float64>
+  col2: Utf8
+```
+
+## RecordBatch Message
+
+RecordBatch messages contain the actual data buffers.
+
+```flatbuffers
+table RecordBatch {
+  length: long;                      // Number of records
+  nodes: [FieldNode];                // Flattened field metadata
+  buffers: [Buffer];                 // Flattened buffer metadata
+  compression: BodyCompression;      // Optional compression
+  variadicBufferCounts: [long];     // For BinaryView/Utf8View types
+}
+```
+
+### Field and Buffer Flattening
+
+Fields and buffers are flattened using **pre-order depth-first traversal**.
+
+**Example Flattening:**
+
+```text
+Schema:
+  col1: Struct<a: Int32, b: List<item: Int64>, c: Float64>
+  col2: Utf8
+
+Flattened Fields:
+  FieldNode 0: Struct name='col1'
+  FieldNode 1: Int32 name='a'
+  FieldNode 2: List name='b'
+  FieldNode 3: Int64 name='item'
+  FieldNode 4: Float64 name='c'
+  FieldNode 5: Utf8 name='col2'
+
+Flattened Buffers:
+  buffer 0:  col1 validity
+  buffer 1:  col1.a validity
+  buffer 2:  col1.a values
+  buffer 3:  col1.b validity
+  buffer 4:  col1.b offsets
+  buffer 5:  col1.b.item validity
+  buffer 6:  col1.b.item values
+  buffer 7:  col1.c validity
+  buffer 8:  col1.c values
+  buffer 9:  col2 validity
+  buffer 10: col2 offsets
+  buffer 11: col2 data
+```
+
+### FieldNode Structure
+
+```flatbuffers
+struct FieldNode {
+  length: long;       // Number of value slots
+  null_count: long;   // Number of observed nulls
+}
+```
+
+<Note>
+Fields with `null_count == 0` may omit their physical validity bitmap by setting buffer length to 0.
+</Note>
+
+### Buffer Structure
+
+```flatbuffers
+struct Buffer {
+  offset: long;  // Relative offset in message body
+  length: long;  // Buffer size (actual, not padded)
+}
+```
+
+Buffer offsets are relative to the start of the message body.
+
+## Variadic Buffers
+
+**New in Arrow 1.4** - Some types (BinaryView, Utf8View) use variable numbers of buffers.
+
+```text
+Schema:
+  col1: Struct<alpha: Int32, beta: BinaryView, gamma: Float64>
+  col2: Utf8View
+
+variadicBufferCounts: [3, 2]
+  - 3 data buffers for col1.beta
+  - 2 data buffers for col2
+
+Flattened Buffers:
+  buffer 0:  col1 validity
+  buffer 1:  col1.alpha validity
+  buffer 2:  col1.alpha values
+  buffer 3:  col1.beta validity
+  buffer 4:  col1.beta views
+  buffer 5:  col1.beta data
+  buffer 6:  col1.beta data
+  buffer 7:  col1.beta data
+  buffer 8:  col1.gamma validity
+  buffer 9:  col1.gamma values
+  buffer 10: col2 validity
+  buffer 11: col2 views
+  buffer 12: col2 data
+  buffer 13: col2 data
+```
+
+## Compression
+
+RecordBatch buffers support optional compression:
+
+### Supported Codecs
+
+- **LZ4_FRAME**: LZ4 frame format (not raw/block format)
+- **ZSTD**: Zstandard compression
+
+### Compression Method
+
+```flatbuffers
+enum BodyCompressionMethod {
+  BUFFER  // Per-buffer compression
+}
+
+table BodyCompression {
+  codec: CompressionType = LZ4_FRAME;
+  method: BodyCompressionMethod = BUFFER;
+}
+```
+
+### Compressed Buffer Format
+
+Each compressed buffer in the message body:
+
+```text
+<uncompressed_length: int64>  (8 bytes, little-endian)
+<compressed_data>              (variable length)
+<padding>                      (to 8-byte boundary)
+```
+
+**Special Cases:**
+- `uncompressed_length == -1`: Buffer is NOT compressed
+- Empty buffers: May be written as 0 bytes (omitting length header)
+
+<Warning>
+Double compression should be avoided. If your transport protocol (e.g., HTTP with gzip) already uses compression, do not enable buffer compression.
+</Warning>
+
+## IPC Streaming Format
+
+The streaming format serializes record batches as a sequence of messages:
+
+```text
+<SCHEMA>
+<DICTIONARY 0>
+<DICTIONARY 1>
+...
+<DICTIONARY k - 1>
+<RECORD BATCH 0>
+<RECORD BATCH 1>
+...
+<DICTIONARY x DELTA>  (optional dictionary updates)
+...
+<RECORD BATCH n - 1>
+<EOS [optional]: 0xFFFFFFFF 0x00000000>
+```
+
+### Message Sequence Rules
+
+1. Schema message comes first
+2. Dictionary messages define dictionaries before use in RecordBatches
+3. Dictionary and RecordBatch messages may be interleaved
+4. Dictionary must be defined before any RecordBatch uses it
+5. End-of-stream (EOS) is optional
+
+<Note>
+Edge case: RecordBatches with completely null dictionary-encoded columns may have their dictionary appear after the first batch.
+</Note>
+
+### End-of-Stream Signal
+
+Two ways to signal EOS:
+
+1. Write 8 bytes: `0xFFFFFFFF 0x00000000` (continuation + zero length)
+2. Close the stream interface
+
+**Recommended file extension:** `.arrows`
+
+### Reading Streaming Format
+
+```python
+# Pseudocode for reading stream
+while reading_stream:
+    # Read 8 bytes
+    continuation = read_int32()  # Should be 0xFFFFFFFF
+    metadata_size = read_int32()
+    
+    if metadata_size == 0:
+        break  # End of stream
+    
+    # Read and parse metadata
+    metadata = read_bytes(metadata_size)
+    message = parse_flatbuffer(metadata)
+    
+    # Read message body
+    body = read_bytes(message.bodyLength)
+    
+    process_message(message, body)
+```
+
+## IPC File Format
+
+The file format enables random access to record batches:
+
+```text
+<magic: "ARROW1">
+<padding: to 8-byte boundary>
+<STREAMING FORMAT with EOS>
+<FOOTER>
+<footer_size: int32>
+<magic: "ARROW1">
+```
+
+### Footer Structure
+
+```flatbuffers
+table Footer {
+  version: MetadataVersion;
+  schema: Schema;
+  dictionaries: [Block];
+  recordBatches: [Block];
+  custom_metadata: [KeyValue];
+}
+
+struct Block {
+  offset: long;        // Start of RecordBatch (past Message header)
+  metaDataLength: int; // Metadata size
+  bodyLength: long;    // Data size (aligned)
+}
+```
+
+**Recommended file extension:** `.arrow` or `.feather`
+
+<Note>
+Files with this format are sometimes called "Feather V2" - the name derives from an early Arrow proof-of-concept for Python/R data frame storage.
+</Note>
+
+### File Format Features
+
+**Random Access:**
+- Footer contains offsets to all record batches
+- Any batch can be read independently
+- Schema is redundantly stored in footer
+
+**Dictionary Constraints:**
+- Dictionary keys don't need to be defined before use
+- Only one non-delta dictionary per ID (no replacement)
+- Delta dictionaries applied in footer order
+
+### Reading File Format
+
+```python
+# Pseudocode for reading file
+# 1. Read footer
+file.seek(-10, SEEK_END)  # Last 10 bytes
+footer_size = read_int32()
+magic = read_bytes(6)
+assert magic == b"ARROW1"
+
+# 2. Read and parse footer
+file.seek(-(10 + footer_size), SEEK_END)
+footer_data = read_bytes(footer_size)
+footer = parse_flatbuffer(footer_data)
+
+# 3. Random access to any record batch
+for block in footer.recordBatches:
+    file.seek(block.offset)
+    message_metadata = read_bytes(block.metaDataLength)
+    message_body = read_bytes(block.bodyLength)
+    process_record_batch(message_metadata, message_body)
+```
+
+## Dictionary Messages
+
+Dictionaries are serialized as record batches with a single field.
+
+```flatbuffers
+table DictionaryBatch {
+  id: long;              // Dictionary identifier
+  data: RecordBatch;     // Dictionary values
+  isDelta: bool = false; // Append vs. replace
+}
+```
+
+### Dictionary Encoding Example
+
+**Original data:** `["A", "B", "C", "B", "D", "C", "E", "A"]`
+
+**Stream with Delta Dictionary:**
+
+```text
+<SCHEMA>
+  field: Dictionary<indices: Int32, values: Utf8>
+
+<DICTIONARY 0>
+  (0) "A"
+  (1) "B"
+  (2) "C"
+
+<RECORD BATCH 0>
+  indices: [0, 1, 2, 1]
+
+<DICTIONARY 0 DELTA>  (isDelta = true)
+  (3) "D"
+  (4) "E"
+
+<RECORD BATCH 1>
+  indices: [3, 2, 4, 0]
+```
+
+### Dictionary Replacement
+
+If `isDelta = false`, dictionary replaces existing:
+
+```text
+<SCHEMA>
+  field: Dictionary<indices: Int32, values: Utf8>
+
+<DICTIONARY 0>
+  (0) "A"
+  (1) "B"
+  (2) "C"
+
+<RECORD BATCH 0>
+  indices: [0, 1, 2, 1]
+
+<DICTIONARY 0>  (isDelta = false, replaces previous)
+  (0) "A"
+  (1) "C"
+  (2) "D"
+  (3) "E"
+
+<RECORD BATCH 1>
+  indices: [2, 1, 3, 0]
+```
+
+<Warning>
+In file format, dictionary replacement is NOT supported. Only one non-delta dictionary per ID is allowed.
+</Warning>
+
+## Endianness
+
+The Arrow format is **little-endian by default**.
+
+### Cross-Platform Exchange
+
+Schema metadata includes an endianness field:
+
+```flatbuffers
+enum Endianness { Little, Big }
+
+table Schema {
+  endianness: Endianness = Little;
+  // ...
+}
+```
+
+**Implementation Guidelines:**
+- Primary use case: systems with same endianness
+- Initial implementations may error on mismatched endianness
+- Future support may include automatic byte swapping
+- Reference implementation focuses on little-endian
+
+## Custom Metadata
+
+Metadata can be attached at three levels:
+
+1. **Field level**: `Field.custom_metadata`
+2. **Schema level**: `Schema.custom_metadata`
+3. **Message level**: `Message.custom_metadata`
+
+### Metadata Format
+
+```flatbuffers
+table KeyValue {
+  key: string;
+  value: string;
+}
+```
+
+### Naming Conventions
+
+- Use colon `:` as namespace separator
+- Multiple colons allowed: `org:project:feature:key`
+- `ARROW:` prefix reserved for internal Arrow use
+
+**Examples:**
+- `ARROW:extension:name` - Extension type name
+- `ARROW:extension:metadata` - Extension type metadata
+- `myorg:custom:property` - Application metadata
+
+## Extension Types
+
+Extension types enable custom semantics on standard Arrow types:
+
+### Required Metadata
+
+1. `ARROW:extension:name` - Unique identifier (use namespaced names)
+2. `ARROW:extension:metadata` - Optional reconstruction data
+
+### Extension Type Examples
+
+<CardGroup cols={2}>
+  <Card title="UUID" icon="fingerprint">
+    - Base type: `FixedSizeBinary(16)`
+    - Metadata: empty
+    - Name: `arrow.uuid`
+  </Card>
+  
+  <Card title="GeoPoint" icon="location-dot">
+    - Base type: `Struct<lat: Float64, lon: Float64>`
+    - Metadata: empty
+    - Name: `myorg.geopoint`
+  </Card>
+  
+  <Card title="Tensor" icon="cube">
+    - Base type: `Binary`
+    - Metadata: `{"dtype": "float32", "shape": [3, 4]}`
+    - Name: `myorg.tensor`
+  </Card>
+  
+  <Card title="TradingTime" icon="clock">
+    - Base type: `Timestamp[microsecond]`
+    - Metadata: `{"calendar": "NYSE"}`
+    - Name: `myorg.trading_time`
+  </Card>
+</CardGroup>
+
+<Warning>
+Extension names starting with `arrow.` are reserved for canonical extensions. Third-party types should use namespaced names like `myorg.typename`.
+</Warning>
+
+### Extension Type Compatibility
+
+Implementations that don't support an extension type:
+- Interpret as the base Arrow type
+- Pass through custom metadata
+- Enable graceful degradation
+
+## Features and Compatibility
+
+Schemas can declare required features:
+
+```flatbuffers
+enum Feature : long {
+  UNUSED = 0;
+  DICTIONARY_REPLACEMENT = 1;  // Dictionary replacement support
+  COMPRESSED_BODY = 2;          // Compressed buffers
+}
+```
+
+Features enable:
+1. Forward compatibility detection
+2. Client-server capability negotiation
+3. Graceful handling of unknown features
+
+## Implementation Considerations
+
+### Zero-Copy Reconstruction
+
+The IPC format enables zero-copy array reconstruction:
+
+```python
+# Pseudocode
+class Array:
+    def __init__(self, message, body):
+        # No copying - just pointer arithmetic
+        for i, buffer_info in enumerate(message.buffers):
+            offset = buffer_info.offset
+            length = buffer_info.length
+            self.buffers[i] = body[offset:offset+length]
+```
+
+### Memory Mapping
+
+File format supports memory mapping:
+- Map entire file to memory
+- Arrays reference mapped regions
+- No explicit reading needed
+- Optimal for large datasets
+
+### Subset Implementation
+
+**Producers:**
+- May implement any subset of spec
+- Should document supported types
+
+**Consumers:**
+- Should handle missing validity bitmaps
+- Should convert unsupported types
+- Must validate message structure
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Buffer Alignment">
+    - Always align buffers to 8-byte boundaries minimum
+    - Prefer 64-byte alignment for SIMD optimization
+    - Pad buffers to alignment size
+  </Accordion>
+  
+  <Accordion title="Compression">
+    - Profile before enabling compression
+    - Avoid double compression with transport protocols
+    - Consider leaving some buffers uncompressed
+    - Use LZ4 for speed, ZSTD for better ratios
+  </Accordion>
+  
+  <Accordion title="Dictionary Encoding">
+    - Use for columns with repeated values
+    - Consider cardinality vs. overhead
+    - Define dictionaries early in streams
+    - Use delta dictionaries for incremental data
+  </Accordion>
+  
+  <Accordion title="File Format">
+    - Use for random access scenarios
+    - Include schema in footer for convenience
+    - Consider chunking very large batches
+    - Validate footer magic bytes
+  </Accordion>
+</AccordionGroup>
+
+## References
+
+- [Message.fbs](https://github.com/apache/arrow/blob/main/format/Message.fbs) - Message definitions
+- [File.fbs](https://github.com/apache/arrow/blob/main/format/File.fbs) - File format
+- [Schema.fbs](https://github.com/apache/arrow/blob/main/format/Schema.fbs) - Type system
